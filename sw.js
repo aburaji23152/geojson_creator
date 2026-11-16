@@ -1,4 +1,4 @@
-const CACHE_NAME = 'geocraft-n03-pwa-v1.1.1';
+const CACHE_NAME = 'geojson-creator-v1.1.1';
 
 // アプリを構成するローカルファイル
 const APP_SHELL_ASSETS = [
