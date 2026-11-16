@@ -1829,4 +1829,71 @@
     resizeCanvas();
     fitViewToFeatures();
   });
+  
+  // =========================================================================
+  // 14. PWA 機能（Service Worker 登録・インストール促進・ファイル関連付け）
+  // =========================================================================
+  function initPWA() {
+    // 1. Service Worker の登録
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker
+          .register('./sw.js')
+          .catch((err) => console.warn('ServiceWorker registration failed:', err));
+      });
+    }
+
+    // 2. インストールプロンプト制御
+    let deferredPrompt = null;
+    const btnInstall = document.getElementById('btn-install-pwa');
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      if (btnInstall) {
+        btnInstall.classList.remove('hidden');
+        btnInstall.classList.add('flex');
+      }
+    });
+
+    if (btnInstall) {
+      btnInstall.addEventListener('click', async () => {
+        if (!deferredPrompt) return;
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        if (outcome === 'accepted') {
+          showToast('アプリをインストールしました', 'success');
+        }
+        deferredPrompt = null;
+        btnInstall.classList.add('hidden');
+        btnInstall.classList.remove('flex');
+      });
+    }
+
+    window.addEventListener('appinstalled', () => {
+      deferredPrompt = null;
+      if (btnInstall) {
+        btnInstall.classList.add('hidden');
+        btnInstall.classList.remove('flex');
+      }
+    });
+
+    // 3. OSから .geojson ファイルを直接開いた場合の読み込み処理 (File Handling API)
+    if ('launchQueue' in window) {
+      window.launchQueue.setConsumer(async (launchParams) => {
+        if (!launchParams.files || launchParams.files.length === 0) return;
+        try {
+          const fileHandle = launchParams.files[0];
+          const file = await fileHandle.getFile();
+          const text = await file.text();
+          importGeoJSONText(text);
+        } catch (err) {
+          console.error(err);
+          showToast('ファイルの読み込みに失敗しました', 'error');
+        }
+      });
+    }
+  }
+
+  initPWA();
 })();
