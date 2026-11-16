@@ -32,31 +32,27 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet" />
-  <!-- 外部スタイルシート -->
   <link rel="stylesheet" href="style.css" />
 </head>
 <body class="bg-slate-100 text-slate-800 dark:bg-slate-950 dark:text-slate-100 h-screen flex flex-col overflow-hidden font-sans transition-colors duration-150">
 
   <!-- ==================== 上部ヘッダーバー ==================== -->
   <header class="h-13 min-h-[52px] bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 flex items-center justify-between gap-2 z-20 shadow-sm">
-    <!-- 左側：ロゴ・アプリ名 -->
     <div class="flex items-center gap-2.5 min-w-0">
       <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-sm shrink-0">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
         </svg>
       </div>
       <div class="truncate">
         <div class="flex items-center gap-2">
           <h1 class="font-bold text-sm sm:text-base tracking-tight truncate">架空行政区画 GeoJSON エディタ</h1>
-          <span class="hidden md:inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">RFC 7946</span>
+          <span class="hidden md:inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">国土数値情報 N03互換</span>
         </div>
       </div>
     </div>
 
-    <!-- 中央〜右側：作図サポート・ファイル入出力ボタン群 -->
     <div class="flex items-center gap-1.5 overflow-x-auto py-1">
-      <!-- サンプル読込 / 新規クリア -->
       <button id="btn-load-sample" title="架空の都道府県・市区町村サンプルを読み込む" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-1.5 transition shrink-0">
         <svg class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
@@ -73,7 +69,6 @@
 
       <div class="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-0.5 shrink-0"></div>
 
-      <!-- グリッド切替 -->
       <button id="btn-toggle-grid" title="座標グリッドの表示切替" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800 flex items-center gap-1.5 transition shrink-0">
         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16M6 4v16M12 4v16M18 4v16" />
@@ -81,7 +76,6 @@
         <span class="hidden md:inline">グリッド</span>
       </button>
 
-      <!-- 下絵・座標系設定モーダル -->
       <button id="btn-open-settings" title="下絵（トレース画像）読み込み・緯度経度座標系設定" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-1.5 transition shrink-0">
         <svg class="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -91,8 +85,7 @@
 
       <div class="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-0.5 shrink-0"></div>
 
-      <!-- GeoJSON インポート -->
-      <label for="input-import-geojson" title="既存のGeoJSONファイルを読み込む" class="cursor-pointer px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-1.5 transition shrink-0">
+      <label for="input-import-geojson" title="既存のGeoJSON（N03データ含む）を読み込む" class="cursor-pointer px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-1.5 transition shrink-0">
         <svg class="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>
@@ -100,7 +93,6 @@
       </label>
       <input type="file" id="input-import-geojson" accept=".geojson,.json,application/geo+json,application/json" class="hidden" />
 
-      <!-- GeoJSON エクスポート / プレビュー -->
       <button id="btn-open-export" title="GeoJSONプレビュー・コピー・ダウンロード" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-1.5 transition shrink-0">
         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -108,7 +100,6 @@
         <span>GeoJSON出力</span>
       </button>
 
-      <!-- テーマ切替（ライト/ダーク） -->
       <button id="btn-toggle-theme" title="ダークモード / ライトモード切替" class="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition shrink-0">
         <svg id="icon-sun" class="w-4 h-4 hidden dark:block" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
@@ -118,7 +109,6 @@
         </svg>
       </button>
 
-      <!-- モバイル用右パネル開閉 -->
       <button id="btn-toggle-right-panel" title="プロパティ・レイヤーパネル表示切替" class="lg:hidden p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 shrink-0">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16m-7 6h7" />
@@ -132,18 +122,14 @@
 
     <!-- 左ツールバー -->
     <aside class="w-14 sm:w-16 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col items-center py-2.5 gap-2 z-10 shrink-0">
-      <!-- 選択・頂点編集ツール -->
-      <button data-tool="select" class="tool-btn active w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-0.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition" title="選択・頂点編集 (V)
-クリックで選択、頂点ドラッグ移動、中点ドラッグで頂点追加、右クリックで頂点削除">
+      <button data-tool="select" class="tool-btn active w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-0.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition" title="選択・頂点編集 (V)">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
         </svg>
         <span class="text-[9px] font-medium">編集</span>
       </button>
 
-      <!-- ポリゴン描画（クリック） -->
-      <button data-tool="polygon" class="tool-btn w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-0.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition" title="ポリゴン描画 (P)
-クリックで頂点配置、始点クリックまたはダブルクリック/Enterで確定">
+      <button data-tool="polygon" class="tool-btn w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-0.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition" title="ポリゴン描画 (P)">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 4l8 5-3 10H7L4 9l8-5z" />
           <circle cx="12" cy="4" r="1.5" fill="currentColor" />
@@ -155,16 +141,13 @@
         <span class="text-[9px] font-medium">多角形</span>
       </button>
 
-      <!-- フリーハンド描画 -->
-      <button data-tool="freehand" class="tool-btn w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-0.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition" title="フリーハンド描画 (F)
-ドラッグで海岸線や山岳境界をなぞり描き（自動頂点簡略化）">
+      <button data-tool="freehand" class="tool-btn w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-0.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition" title="フリーハンド描画 (F)">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
         </svg>
         <span class="text-[9px] font-medium">なぞり</span>
       </button>
 
-      <!-- パン（画面移動） -->
       <button data-tool="pan" class="tool-btn w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-0.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition" title="画面移動・パン (H または Space+ドラッグ)">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
@@ -174,16 +157,13 @@
 
       <div class="w-8 h-px bg-slate-200 dark:bg-slate-700 my-0.5"></div>
 
-      <!-- 頂点スナップ切替 -->
-      <button id="btn-toggle-snap" class="w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-0.5 bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700 transition" title="頂点スナップ機能 ON/OFF (S)
-隣接する県・市区町村の頂点に自動吸着します">
+      <button id="btn-toggle-snap" class="w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-0.5 bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700 transition" title="頂点スナップ機能 ON/OFF (S)">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
         <span id="snap-label" class="text-[9px] font-bold">吸着ON</span>
       </button>
 
-      <!-- 全体表示リセット -->
       <button id="btn-fit-view" class="w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-0.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition" title="全体表示にフィット (0)">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
@@ -193,7 +173,6 @@
 
       <div class="w-8 h-px bg-slate-200 dark:bg-slate-700 my-0.5"></div>
 
-      <!-- Undo / Redo -->
       <button id="btn-undo" disabled class="w-11 h-10 rounded-xl flex flex-col items-center justify-center gap-0.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-35 disabled:pointer-events-none transition" title="元に戻す (Ctrl+Z)">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
@@ -213,7 +192,6 @@
     <main class="flex-1 flex flex-col relative overflow-hidden bg-slate-50 dark:bg-slate-950" id="canvas-container">
       <canvas id="map-canvas" class="w-full h-full cursor-crosshair"></canvas>
 
-      <!-- 描画中のフローティング操作バー（ポリゴン作成中のみ表示） -->
       <div id="drawing-toolbar" class="hidden absolute top-3 left-1/2 -translate-x-1/2 bg-white/95 dark:bg-slate-900/95 backdrop-blur border border-slate-200 dark:border-slate-700 shadow-lg rounded-full px-4 py-1.5 flex items-center gap-3 z-10">
         <span class="text-xs font-medium text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
           <span class="w-2 h-2 rounded-full bg-blue-500 animate-ping"></span>
@@ -223,7 +201,6 @@
         <button id="btn-cancel-polygon" class="px-2.5 py-1 rounded-full bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-medium transition">取消 (Esc)</button>
       </div>
 
-      <!-- ズームコントロール（右下フローティング） -->
       <div class="absolute bottom-9 right-3 flex flex-col bg-white/90 dark:bg-slate-900/90 backdrop-blur border border-slate-200 dark:border-slate-800 rounded-xl shadow-md overflow-hidden z-10">
         <button id="btn-zoom-in" class="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border-b border-slate-200 dark:border-slate-800" title="拡大 (+)">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
@@ -233,7 +210,6 @@
         </button>
       </div>
 
-      <!-- 下部ステータスバー -->
       <footer class="h-7 bg-white/95 dark:bg-slate-900/95 border-t border-slate-200 dark:border-slate-800 px-3 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 z-10 shrink-0">
         <div class="flex items-center gap-3 truncate">
           <span id="status-coords" class="font-mono text-slate-700 dark:text-slate-300 shrink-0">東経 138.0000° / 北緯 35.5000°</span>
@@ -252,33 +228,31 @@
     <aside id="right-panel" class="w-80 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 flex flex-col z-20 shrink-0 absolute lg:static right-0 top-0 bottom-0 shadow-xl lg:shadow-none transition-transform duration-200 translate-x-full lg:translate-x-0">
       
       <!-- 上半分：選択中地物のプロパティ編集 -->
-      <div class="p-3.5 border-b border-slate-200 dark:border-slate-800 overflow-y-auto max-h-[56%]">
+      <div class="p-3.5 border-b border-slate-200 dark:border-slate-800 overflow-y-auto max-h-[60%]">
         <div class="flex items-center justify-between mb-2.5">
           <h2 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
             <svg class="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
             </svg>
-            行政区画プロパティ
+            行政区域属性 (N03対応)
           </h2>
           <button id="btn-close-right-panel" class="lg:hidden text-slate-400 hover:text-slate-600 p-1">✕</button>
         </div>
 
-        <!-- 未選択時のプレースホルダー -->
         <div id="prop-empty-state" class="py-8 px-3 text-center rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-dashed border-slate-200 dark:border-slate-700">
           <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
             キャンバス上の県・市区町村をクリックして選択するか、左のツールで新しい境界を描画してください。
           </p>
         </div>
 
-        <!-- 選択時の編集フォーム -->
         <form id="prop-form" class="hidden space-y-2.5">
           <!-- 階層・種別 -->
           <div>
             <label class="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">階層・種別（境界スタイル連動）</label>
             <select id="prop-admin-level" class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="prefecture">都道府県（太線境界・広域）</option>
-              <option value="municipality">市区町村（細線境界・基礎自治体）</option>
-              <option value="island">島嶼・特別地域</option>
+              <option value="prefecture">都道府県（N03_004 = null）</option>
+              <option value="municipality">市区町村（基礎自治体・行政区）</option>
+              <option value="island">島嶼・所属未定地</option>
             </select>
           </div>
 
@@ -305,15 +279,27 @@
             </div>
           </div>
 
-          <!-- 所属都道府県 & 自治体コード -->
+          <!-- N03_001 都道府県名 & N03_007 行政区域コード -->
           <div class="grid grid-cols-2 gap-2">
             <div>
-              <label class="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">所属都道府県</label>
+              <label class="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">N03_001 都道府県</label>
               <input type="text" id="prop-prefecture" placeholder="例: 蒼海県" class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
             <div>
-              <label class="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">自治体コード</label>
+              <label class="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">N03_007 区域コード</label>
               <input type="text" id="prop-code" placeholder="例: 99101" class="w-full font-mono rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+          </div>
+
+          <!-- N03_002 支庁名 & N03_003 郡・政令市名 -->
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">N03_002 支庁・振興局</label>
+              <input type="text" id="prop-subpref" placeholder="任意 (例: 東部支庁)" class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label class="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">N03_003 郡・政令市</label>
+              <input type="text" id="prop-county" placeholder="任意 (例: 蒼海郡)" class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
           </div>
 
@@ -330,7 +316,6 @@
                 <span class="text-[11px] text-slate-500">境界線</span>
               </div>
             </div>
-            <!-- クイックカラーパレット -->
             <div id="color-palette" class="flex flex-wrap gap-1.5"></div>
           </div>
 
@@ -358,9 +343,7 @@
           <button id="btn-deselect-all" class="text-[11px] text-blue-600 dark:text-blue-400 hover:underline">選択解除</button>
         </div>
 
-        <div id="layer-list" class="flex-1 overflow-y-auto space-y-1.5 pr-0.5">
-          <!-- JSで動的生成 -->
-        </div>
+        <div id="layer-list" class="flex-1 overflow-y-auto space-y-1.5 pr-0.5"></div>
       </div>
     </aside>
   </div>
@@ -370,8 +353,8 @@
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[88vh] overflow-hidden">
       <div class="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
         <div>
-          <h3 class="font-bold text-base">GeoJSON エクスポート & プレビュー</h3>
-          <p class="text-xs text-slate-500 dark:text-slate-400">RFC 7946準拠の FeatureCollection 形式（反時計回りリング正規化済）</p>
+          <h3 class="font-bold text-base">GeoJSON エクスポート（国土数値情報 N03 準拠）</h3>
+          <p class="text-xs text-slate-500 dark:text-slate-400">N03_001〜N03_007 属性構造 / RFC 7946 反時計回り正規化済</p>
         </div>
         <button data-close-modal="modal-export" class="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500">✕</button>
       </div>
@@ -380,12 +363,18 @@
         <div class="flex flex-wrap items-center justify-between gap-2 bg-slate-50 dark:bg-slate-800/70 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700">
           <div class="flex items-center gap-2">
             <label class="text-xs font-medium">ファイル名:</label>
-            <input type="text" id="export-filename" value="fictional_boundaries.geojson" class="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2.5 py-1 text-xs font-mono w-56" />
+            <input type="text" id="export-filename" value="N03-20260101_99_GML.geojson" class="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2.5 py-1 text-xs font-mono w-56" />
           </div>
-          <label class="flex items-center gap-1.5 text-xs cursor-pointer">
-            <input type="checkbox" id="export-pretty-print" checked class="rounded text-blue-600" />
-            <span>インデント整形</span>
-          </label>
+          <div class="flex flex-wrap items-center gap-3">
+            <label class="flex items-center gap-1.5 text-xs cursor-pointer" title="オフにすると純粋なN03属性（N03_001〜N03_007）のみ出力します">
+              <input type="checkbox" id="export-include-style" checked class="rounded text-blue-600" />
+              <span>色・スタイルメタ情報を含める</span>
+            </label>
+            <label class="flex items-center gap-1.5 text-xs cursor-pointer">
+              <input type="checkbox" id="export-pretty-print" checked class="rounded text-blue-600" />
+              <span>インデント整形</span>
+            </label>
+          </div>
         </div>
 
         <textarea id="export-json-textarea" readonly class="flex-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-950 text-emerald-400 font-mono text-xs p-3.5 resize-none focus:outline-none leading-relaxed"></textarea>
@@ -394,7 +383,7 @@
       <div class="px-5 py-3.5 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-2.5 bg-slate-50 dark:bg-slate-900/50">
         <button id="btn-copy-geojson" class="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 flex items-center gap-1.5 transition">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
           </svg>
           <span>クリップボードにコピー</span>
         </button>
@@ -417,7 +406,6 @@
       </div>
 
       <div class="p-5 space-y-5 max-h-[80vh] overflow-y-auto">
-        <!-- セクション1: 下絵画像 -->
         <div class="space-y-3">
           <h4 class="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">1. 下絵（トレース用背景画像）</h4>
           <div class="flex items-center gap-2">
@@ -450,9 +438,8 @@
 
         <hr class="border-slate-200 dark:border-slate-800" />
 
-        <!-- セクション2: 仮想緯度・経度マッピング -->
         <div class="space-y-3">
-          <h4 class="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">2. GeoJSON 座標系マッピング</h4>
+          <h4 class="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">2. GeoJSON 座標系マッピング (JGD2011 / WGS84)</h4>
           <p class="text-xs text-slate-500 dark:text-slate-400">
             キャンバス中心 `(0, 0)` に対応する基準緯度・経度と、100ピクセルあたりの地理的広がり（度）を指定します。
           </p>
@@ -484,10 +471,8 @@
     </div>
   </div>
 
-  <!-- ==================== トースト通知コンテナ ==================== -->
   <div id="toast-container" class="fixed bottom-10 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 pointer-events-none"></div>
 
-  <!-- 外部JavaScriptファイル -->
   <script src="script.js"></script>
 </body>
 </html>
