@@ -17,9 +17,8 @@
     { fill: '#64748b', stroke: '#334155', label: 'スレート' }
   ];
 
-  // 境界がピタリと一致する架空の「蒼海県」と4市区町村のサンプル
+  // 国土数値情報(N03)準拠のプロパティを持つ架空の「蒼海県」サンプル
   function createSampleFeatures() {
-    // 共有頂点の座標定義（隣接境界が隙間なく一致するサンプル）
     const pNW = { x: -240, y: -170 };
     const pN1 = { x: -70, y: -195 };
     const pN2 = { x: 95, y: -180 };
@@ -30,7 +29,6 @@
     const pSW = { x: -155, y: 165 };
     const pW1 = { x: -260, y: 15 };
 
-    // 内部の境界分岐点
     const c1 = { x: -55, y: -35 };
     const c2 = { x: 75, y: -25 };
     const c3 = { x: 20, y: 75 };
@@ -42,8 +40,10 @@
         name: '蒼海',
         suffix: '県',
         adminLevel: 'prefecture',
-        prefecture: '蒼海県',
-        code: '99000',
+        prefecture: '蒼海県', // N03_001
+        subpref: '',          // N03_002
+        county: '',           // N03_003
+        code: '99000',        // N03_007
         fillColor: '#3b82f6',
         strokeColor: '#1e3a8a',
         visible: true,
@@ -55,7 +55,9 @@
         suffix: '町',
         adminLevel: 'municipality',
         prefecture: '蒼海県',
-        code: '99201',
+        subpref: '',
+        county: '北嶺郡',
+        code: '99301',
         fillColor: '#10b981',
         strokeColor: '#065f46',
         visible: true,
@@ -67,7 +69,9 @@
         suffix: '市',
         adminLevel: 'municipality',
         prefecture: '蒼海県',
-        code: '99102',
+        subpref: '',
+        county: '',
+        code: '99201',
         fillColor: '#f59e0b',
         strokeColor: '#92400e',
         visible: true,
@@ -75,10 +79,12 @@
       },
       {
         id: 'feat_muni_3',
-        name: '蒼海',
-        suffix: '市',
+        name: '中央',
+        suffix: '区',
         adminLevel: 'municipality',
         prefecture: '蒼海県',
+        subpref: '',
+        county: '蒼海市',
         code: '99101',
         fillColor: '#ef4444',
         strokeColor: '#991b1b',
@@ -91,7 +97,9 @@
         suffix: '区',
         adminLevel: 'municipality',
         prefecture: '蒼海県',
-        code: '99103',
+        subpref: '',
+        county: '蒼海市',
+        code: '99102',
         fillColor: '#8b5cf6',
         strokeColor: '#5b21b6',
         visible: true,
@@ -106,52 +114,45 @@
   const state = {
     features: [],
     selectedId: null,
-    tool: 'select', // 'select' | 'polygon' | 'freehand' | 'pan'
+    tool: 'select',
     snapEnabled: true,
     showGrid: true,
 
-    // カメラ（パン・ズーム）
     camera: {
-      x: 0, // 画面中心が指すワールド座標X
-      y: 0, // 画面中心が指すワールド座標Y
+      x: 0,
+      y: 0,
       zoom: 1.0
     },
 
-    // 地理座標マッピング設定
     geoMapping: {
       originLon: 138.00,
       originLat: 35.50,
       degPer100px: 0.10
     },
 
-    // 下絵画像設定
     underlay: {
       image: null,
       opacity: 0.45,
       scale: 1.0
     },
 
-    // インタラクション状態
     mouseScreen: { x: 0, y: 0 },
     mouseWorld: { x: 0, y: 0 },
-    snapTarget: null, // { x, y, featureId, vertexIndex }
-    hoveredVertex: null, // { featureId, vertexIndex }
-    hoveredMidpoint: null, // { featureId, edgeIndex, x, y }
+    snapTarget: null,
+    hoveredVertex: null,
+    hoveredMidpoint: null,
 
-    // 描画中データ
-    drawingVertices: [], // polygonツール用
+    drawingVertices: [],
     isFreehandDrawing: false,
     freehandPoints: [],
 
-    // ドラッグ操作状態
-    dragMode: null, // 'pan' | 'vertex' | 'midpoint' | 'feature'
+    dragMode: null,
     dragStartScreen: { x: 0, y: 0 },
     dragStartCamera: { x: 0, y: 0 },
     dragTargetVertexIndex: -1,
     dragStartFeatureVertices: null,
     isSpacePressed: false,
 
-    // Undo / Redo スタック
     history: [],
     historyIndex: -1
   };
@@ -163,7 +164,6 @@
   const ctx = canvas.getContext('2d');
   const canvasContainer = document.getElementById('canvas-container');
 
-  // ステータスバー・ツール関連
   const statusCoords = document.getElementById('status-coords');
   const statusZoom = document.getElementById('status-zoom');
   const statusHint = document.getElementById('status-hint');
@@ -171,7 +171,6 @@
   const drawingToolbar = document.getElementById('drawing-toolbar');
   const drawingVertexCount = document.getElementById('drawing-vertex-count');
 
-  // 右パネル関連
   const rightPanel = document.getElementById('right-panel');
   const propEmptyState = document.getElementById('prop-empty-state');
   const propForm = document.getElementById('prop-form');
@@ -179,6 +178,8 @@
   const propName = document.getElementById('prop-name');
   const propSuffix = document.getElementById('prop-suffix');
   const propPrefecture = document.getElementById('prop-prefecture');
+  const propSubpref = document.getElementById('prop-subpref');
+  const propCounty = document.getElementById('prop-county');
   const propCode = document.getElementById('prop-code');
   const propFillColor = document.getElementById('prop-fill-color');
   const propStrokeColor = document.getElementById('prop-stroke-color');
@@ -211,7 +212,6 @@
     }, 2600);
   }
 
-  // スクリーン座標 -> ワールド座標
   function screenToWorld(sx, sy) {
     const rect = canvas.getBoundingClientRect();
     const cx = rect.width / 2;
@@ -222,7 +222,6 @@
     };
   }
 
-  // ワールド座標 -> スクリーン座標
   function worldToScreen(wx, wy) {
     const rect = canvas.getBoundingClientRect();
     const cx = rect.width / 2;
@@ -233,18 +232,16 @@
     };
   }
 
-  // ワールド座標 -> 緯度・経度 [lon, lat]
   function worldToGeo(wx, wy) {
     const scale = state.geoMapping.degPer100px / 100;
     const lon = state.geoMapping.originLon + wx * scale;
-    const lat = state.geoMapping.originLat - wy * scale; // Y軸下向きを北緯反転
+    const lat = state.geoMapping.originLat - wy * scale;
     return [
       Number(lon.toFixed(6)),
       Number(lat.toFixed(6))
     ];
   }
 
-  // 緯度・経度 [lon, lat] -> ワールド座標
   function geoToWorld(lon, lat) {
     const scale = state.geoMapping.degPer100px / 100;
     return {
@@ -253,12 +250,10 @@
     };
   }
 
-  // 2点間の距離
   function dist(p1, p2) {
     return Math.hypot(p1.x - p2.x, p1.y - p2.y);
   }
 
-  // Point-in-Polygon (Ray Casting法)
   function isPointInPolygon(pt, vertices) {
     let inside = false;
     for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i++) {
@@ -271,7 +266,6 @@
     return inside;
   }
 
-  // ポリゴンの重心計算（ラベル表示用）
   function getPolygonCentroid(vertices) {
     if (!vertices || vertices.length === 0) return { x: 0, y: 0 };
     let area = 0, cx = 0, cy = 0;
@@ -291,7 +285,6 @@
     return { x: cx / (6 * area), y: cy / (6 * area) };
   }
 
-  // Douglas-Peucker 頂点簡略化アルゴリズム（フリーハンド描画用）
   function simplifyDouglasPeucker(points, epsilon) {
     if (points.length <= 2) return points;
     let maxDist = 0;
@@ -331,7 +324,6 @@
   }
 
   function saveHistory() {
-    // 現在位置より先の履歴を削除
     state.history = state.history.slice(0, state.historyIndex + 1);
     state.history.push(cloneFeatures(state.features));
     if (state.history.length > 50) {
@@ -420,28 +412,23 @@
     const height = rect.height;
     const isDark = document.documentElement.classList.contains('dark');
 
-    // 背景クリア
     ctx.fillStyle = isDark ? '#090d16' : '#f8fafc';
     ctx.fillRect(0, 0, width, height);
 
-    // 1. グリッド描画
     if (state.showGrid) {
       drawGrid(width, height, isDark);
     }
 
-    // 2. 下絵画像描画
     if (state.underlay.image) {
       drawUnderlayImage();
     }
 
-    // 3. 行政区画ポリゴン描画
     for (const feat of state.features) {
       if (!feat.visible || feat.vertices.length < 3) continue;
       const isSelected = feat.id === state.selectedId;
       drawFeaturePolygon(feat, isSelected, isDark);
     }
 
-    // 4. 選択中ポリゴンの編集ハンドル（頂点・辺の中点）描画
     if (state.tool === 'select' && state.selectedId) {
       const selectedFeat = state.features.find(f => f.id === state.selectedId);
       if (selectedFeat && selectedFeat.visible) {
@@ -449,17 +436,14 @@
       }
     }
 
-    // 5. 新規ポリゴン描画中のプレビュー
     if (state.tool === 'polygon' && state.drawingVertices.length > 0) {
       drawPolygonInProgress();
     }
 
-    // 6. フリーハンド描画中の軌跡プレビュー
     if (state.tool === 'freehand' && state.isFreehandDrawing && state.freehandPoints.length > 1) {
       drawFreehandInProgress();
     }
 
-    // 7. スナップターゲットのターゲットリング描画
     if (state.snapTarget) {
       const sp = worldToScreen(state.snapTarget.x, state.snapTarget.y);
       ctx.save();
@@ -478,7 +462,6 @@
   }
 
   function drawGrid(width, height, isDark) {
-    // ズームレベルに応じてグリッド間隔を動的調整
     let gridStepWorld = 50;
     if (state.camera.zoom < 0.4) gridStepWorld = 200;
     else if (state.camera.zoom < 0.8) gridStepWorld = 100;
@@ -551,7 +534,6 @@
     }
     ctx.closePath();
 
-    // 塗りつぶし透明度（都道府県は広域なので薄め、市区町村は少し濃く）
     const fillAlpha = feat.adminLevel === 'prefecture'
       ? (isSelected ? 0.22 : 0.12)
       : (isSelected ? 0.42 : 0.28);
@@ -559,11 +541,10 @@
     ctx.fillStyle = hexToRgba(feat.fillColor, fillAlpha);
     ctx.fill();
 
-    // 境界線スタイル（都道府県は太め、市区町村は細め）
     ctx.strokeStyle = isSelected ? '#2563eb' : feat.strokeColor;
     if (feat.adminLevel === 'prefecture') {
       ctx.lineWidth = isSelected ? 4.5 : 3.5;
-      ctx.setLineDash([10, 4]); // 県境らしさを出す長破線
+      ctx.setLineDash([10, 4]);
     } else if (feat.adminLevel === 'island') {
       ctx.lineWidth = isSelected ? 3 : 2;
       ctx.setLineDash([4, 4]);
@@ -575,14 +556,12 @@
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // 選択時の外側ハイライト光彩
     if (isSelected) {
       ctx.strokeStyle = 'rgba(59, 130, 246, 0.35)';
       ctx.lineWidth = 8;
       ctx.stroke();
     }
 
-    // ラベル（自治体名）の描画
     const fullName = `${feat.name}${feat.suffix}`;
     if (fullName.trim() !== '') {
       const centroidWorld = getPolygonCentroid(feat.vertices);
@@ -596,7 +575,6 @@
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
 
-      // 文字の縁取り（視認性向上）
       ctx.lineWidth = 3.5;
       ctx.strokeStyle = isDark ? 'rgba(15, 23, 42, 0.85)' : 'rgba(255, 255, 255, 0.9)';
       ctx.strokeText(fullName, centerScreen.x, centerScreen.y);
@@ -612,14 +590,12 @@
     const verts = feat.vertices;
     ctx.save();
 
-    // 1. 各辺の中点ハンドル（＋ボタン風の小さな円）
     for (let i = 0; i < verts.length; i++) {
       const v1 = verts[i];
       const v2 = verts[(i + 1) % verts.length];
       const midWorld = { x: (v1.x + v2.x) / 2, y: (v1.y + v2.y) / 2 };
       const midScreen = worldToScreen(midWorld.x, midWorld.y);
 
-      // 辺が短すぎる場合は中点ハンドルを隠す
       const edgeLenPx = dist(worldToScreen(v1.x, v1.y), worldToScreen(v2.x, v2.y));
       if (edgeLenPx < 24) continue;
 
@@ -633,7 +609,6 @@
       ctx.stroke();
     }
 
-    // 2. 各頂点ハンドル
     for (let i = 0; i < verts.length; i++) {
       const sp = worldToScreen(verts[i].x, verts[i].y);
       const isHovered = state.hoveredVertex && state.hoveredVertex.vertexIndex === i;
@@ -657,7 +632,6 @@
     const cursorScreen = worldToScreen(cursorWorld.x, cursorWorld.y);
 
     ctx.save();
-    // 塗りプレビュー
     if (pts.length >= 2) {
       ctx.beginPath();
       ctx.moveTo(pts[0].x, pts[0].y);
@@ -668,7 +642,6 @@
       ctx.fill();
     }
 
-    // 確定済み辺
     ctx.beginPath();
     ctx.moveTo(pts[0].x, pts[0].y);
     for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
@@ -676,7 +649,6 @@
     ctx.lineWidth = 2.5;
     ctx.stroke();
 
-    // ラバーバンド（現在位置までの破線）
     ctx.beginPath();
     ctx.moveTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
     ctx.lineTo(cursorScreen.x, cursorScreen.y);
@@ -686,7 +658,6 @@
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // 頂点ドット（始点は大きく強調して閉じやすいようにする）
     for (let i = 0; i < pts.length; i++) {
       ctx.beginPath();
       const isFirst = i === 0 && pts.length >= 3;
@@ -738,14 +709,12 @@
   }
 
   function handlePointerDown(e) {
-    // 右クリック（頂点削除用）は別ハンドラで処理
     if (e.button === 2) return;
 
     const screenPt = getPointerPos(e);
     state.mouseScreen = screenPt;
     state.mouseWorld = screenToWorld(screenPt.x, screenPt.y);
 
-    // 中ボタンクリック または スペースキー押下中 または パンツール -> パン開始
     if (e.button === 1 || state.isSpacePressed || state.tool === 'pan') {
       state.dragMode = 'pan';
       state.dragStartScreen = screenPt;
@@ -754,7 +723,6 @@
       return;
     }
 
-    // --- ツール別処理 ---
     if (state.tool === 'select') {
       handleSelectPointerDown(screenPt);
     } else if (state.tool === 'polygon') {
@@ -767,7 +735,6 @@
   function handleSelectPointerDown(screenPt) {
     const selectedFeat = state.features.find(f => f.id === state.selectedId);
 
-    // 1. 選択中ポリゴンの頂点ハンドル判定
     if (selectedFeat && selectedFeat.visible) {
       for (let i = 0; i < selectedFeat.vertices.length; i++) {
         const vs = worldToScreen(selectedFeat.vertices[i].x, selectedFeat.vertices[i].y);
@@ -778,14 +745,12 @@
         }
       }
 
-      // 2. 選択中ポリゴンの辺の中点ハンドル判定（クリック/ドラッグで頂点挿入）
       for (let i = 0; i < selectedFeat.vertices.length; i++) {
         const v1 = selectedFeat.vertices[i];
         const v2 = selectedFeat.vertices[(i + 1) % selectedFeat.vertices.length];
         const midWorld = { x: (v1.x + v2.x) / 2, y: (v1.y + v2.y) / 2 };
         const midScreen = worldToScreen(midWorld.x, midWorld.y);
         if (dist(screenPt, midScreen) <= 9) {
-          // 新しい頂点を挿入して即ドラッグ可能にする
           selectedFeat.vertices.splice(i + 1, 0, midWorld);
           state.dragMode = 'vertex';
           state.dragTargetVertexIndex = i + 1;
@@ -795,7 +760,6 @@
       }
     }
 
-    // 3. ポリゴン本体のヒットテスト（上のレイヤーから優先判定）
     const hitCandidates = [];
     for (let i = state.features.length - 1; i >= 0; i--) {
       const feat = state.features[i];
@@ -806,12 +770,10 @@
     }
 
     if (hitCandidates.length > 0) {
-      // 既に選択中の地物が候補にある場合、Shiftキーで全体移動、それ以外は重なり巡回または選択維持
       let nextSelected = hitCandidates[0];
       if (hitCandidates.length > 1 && state.selectedId) {
         const idx = hitCandidates.findIndex(f => f.id === state.selectedId);
         if (idx !== -1 && !window.event?.shiftKey) {
-          // 同じ場所をクリックしたら次の重なりレイヤーへ切替（都道府県と市区町村が重なるため便利）
           nextSelected = hitCandidates[(idx + 1) % hitCandidates.length];
         } else if (idx !== -1) {
           nextSelected = hitCandidates[idx];
@@ -821,7 +783,6 @@
       state.selectedId = nextSelected.id;
       syncUI();
 
-      // Shiftキー押下中ならポリゴン全体の平行移動ドラッグを開始
       if (window.event?.shiftKey) {
         state.dragMode = 'feature';
         state.dragStartScreen = screenPt;
@@ -829,7 +790,6 @@
       }
       render();
     } else {
-      // 何もない場所をクリック -> 選択解除しつつパン移動も可能に
       state.selectedId = null;
       syncUI();
       state.dragMode = 'pan';
@@ -843,7 +803,6 @@
     const snap = findSnapTarget(screenPt);
     const targetWorld = snap ? { x: snap.x, y: snap.y } : { ...state.mouseWorld };
 
-    // 3頂点以上あり、始点付近をクリックしたらポリゴン確定
     if (state.drawingVertices.length >= 3) {
       const firstScreen = worldToScreen(state.drawingVertices[0].x, state.drawingVertices[0].y);
       if (dist(screenPt, firstScreen) <= 14) {
@@ -870,11 +829,9 @@
     state.mouseScreen = screenPt;
     state.mouseWorld = screenToWorld(screenPt.x, screenPt.y);
 
-    // ステータスバーの緯度経度更新
     const [lon, lat] = worldToGeo(state.mouseWorld.x, state.mouseWorld.y);
     statusCoords.textContent = `東経 ${lon.toFixed(4)}° / 北緯 ${lat.toFixed(4)}°`;
 
-    // パン移動中
     if (state.dragMode === 'pan') {
       const dx = (screenPt.x - state.dragStartScreen.x) / state.camera.zoom;
       const dy = (screenPt.y - state.dragStartScreen.y) / state.camera.zoom;
@@ -884,7 +841,6 @@
       return;
     }
 
-    // 頂点ドラッグ移動中
     if (state.dragMode === 'vertex' && state.selectedId) {
       const feat = state.features.find(f => f.id === state.selectedId);
       if (feat) {
@@ -897,7 +853,6 @@
       return;
     }
 
-    // ポリゴン全体平行移動中
     if (state.dragMode === 'feature' && state.selectedId && state.dragStartFeatureVertices) {
       const feat = state.features.find(f => f.id === state.selectedId);
       if (feat) {
@@ -912,7 +867,6 @@
       return;
     }
 
-    // フリーハンド描画中
     if (state.tool === 'freehand' && state.isFreehandDrawing) {
       const lastPt = state.freehandPoints[state.freehandPoints.length - 1];
       if (dist(state.mouseWorld, lastPt) > 4 / state.camera.zoom) {
@@ -923,14 +877,12 @@
       return;
     }
 
-    // ポリゴン描画中のスナップ探索
     if (state.tool === 'polygon') {
       state.snapTarget = findSnapTarget(screenPt);
       render();
       return;
     }
 
-    // 選択ツール時のホバー判定（頂点・中点カーソル変化）
     if (state.tool === 'select') {
       state.snapTarget = null;
       state.hoveredVertex = null;
@@ -982,7 +934,6 @@
     render();
   }
 
-  // 右クリック：頂点削除
   canvas.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     if (state.tool !== 'select' || !state.selectedId) return;
@@ -1007,10 +958,8 @@
     }
   });
 
-  // ダブルクリック：ポリゴン描画確定
   canvas.addEventListener('dblclick', () => {
     if (state.tool === 'polygon' && state.drawingVertices.length >= 3) {
-      // ダブルクリックの2回目で余分に追加された重複近接頂点を除去
       const len = state.drawingVertices.length;
       if (len >= 4 && dist(state.drawingVertices[len - 1], state.drawingVertices[len - 2]) < 3) {
         state.drawingVertices.pop();
@@ -1019,7 +968,6 @@
     }
   });
 
-  // ホイールズーム（カーソル位置中心）
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
     const screenPt = getPointerPos(e);
@@ -1042,17 +990,18 @@
   function createNewFeatureFromVertices(vertices) {
     const idx = state.features.length + 1;
     const palette = COLOR_PALETTE[(idx - 1) % COLOR_PALETTE.length];
-    // 既に都道府県が存在する場合はデフォルトを市区町村にする
     const hasPref = state.features.some(f => f.adminLevel === 'prefecture');
     const defaultPref = state.features.find(f => f.adminLevel === 'prefecture');
 
     const newFeat = {
       id: `feat_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-      name: hasPref ? `新設第${idx}` : '新規県',
+      name: hasPref ? `新設第${idx}` : '新規',
       suffix: hasPref ? '市' : '県',
       adminLevel: hasPref ? 'municipality' : 'prefecture',
       prefecture: defaultPref ? `${defaultPref.name}${defaultPref.suffix}` : '新規県',
-      code: `99${String(100 + idx).padStart(3, '0')}`,
+      subpref: '',
+      county: '',
+      code: hasPref ? `99${String(200 + idx).padStart(3, '0')}` : '99000',
       fillColor: palette.fill,
       strokeColor: palette.stroke,
       visible: true,
@@ -1095,17 +1044,14 @@
       return;
     }
 
-    // 終点スナップ判定
     const endSnap = findSnapTarget(state.mouseScreen);
     if (endSnap) {
       raw[raw.length - 1] = { x: endSnap.x, y: endSnap.y };
     }
 
-    // Douglas-Peucker法で滑らかかつ編集しやすい頂点数に簡略化
     const epsilon = 5.5 / state.camera.zoom;
     let simplified = simplifyDouglasPeucker(raw, epsilon);
 
-    // 始点と終点が近ければ終点を除去して閉じる
     if (simplified.length > 3 && dist(simplified[0], simplified[simplified.length - 1]) < 12 / state.camera.zoom) {
       simplified.pop();
     }
@@ -1197,7 +1143,6 @@
   function syncUI() {
     const selectedFeat = state.features.find(f => f.id === state.selectedId);
 
-    // プロパティフォームの同期
     if (selectedFeat) {
       propEmptyState.classList.add('hidden');
       propForm.classList.remove('hidden');
@@ -1205,6 +1150,8 @@
       propName.value = selectedFeat.name;
       propSuffix.value = selectedFeat.suffix;
       propPrefecture.value = selectedFeat.prefecture || '';
+      propSubpref.value = selectedFeat.subpref || '';
+      propCounty.value = selectedFeat.county || '';
       propCode.value = selectedFeat.code || '';
       propFillColor.value = selectedFeat.fillColor;
       propStrokeColor.value = selectedFeat.strokeColor;
@@ -1213,11 +1160,9 @@
       propForm.classList.add('hidden');
     }
 
-    // レイヤー一覧の同期
     layerCount.textContent = state.features.length;
     layerList.innerHTML = '';
 
-    // 上層レイヤーをリストの上に表示（逆順表示）
     for (let i = state.features.length - 1; i >= 0; i--) {
       const feat = state.features[i];
       const isSelected = feat.id === state.selectedId;
@@ -1225,7 +1170,7 @@
       const badgeMap = {
         prefecture: { text: '都道府県', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300' },
         municipality: { text: '市区町村', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300' },
-        island: { text: '島嶼・他', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300' }
+        island: { text: '所属未定', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300' }
       };
       const badge = badgeMap[feat.adminLevel] || badgeMap.municipality;
 
@@ -1301,44 +1246,58 @@
   }
 
   // =========================================================================
-  // 11. GeoJSON 生成（RFC 7946準拠）＆ インポート処理
+  // 11. GeoJSON 生成（国土数値情報 N03 行政区域データ構造準拠）＆ インポート
   // =========================================================================
-  function buildGeoJSON(pretty = true) {
+  function buildGeoJSON(pretty = true, includeStyleMeta = true) {
     const features = state.features
       .filter(f => f.vertices && f.vertices.length >= 3)
       .map(f => {
         // ワールド座標 -> [lon, lat]
         let ring = f.vertices.map(v => worldToGeo(v.x, v.y));
 
-        // RFC 7946: 外周リングは反時計回り（Shoelace法で符号付き面積が正）に正規化
+        // RFC 7946: 外周リングを反時計回り(CCW)に正規化
         let signedArea = 0;
         for (let i = 0; i < ring.length; i++) {
           const p1 = ring[i];
           const p2 = ring[(i + 1) % ring.length];
           signedArea += (p2[0] - p1[0]) * (p2[1] + p1[1]);
         }
-        // 経度・緯度系で signedArea > 0 は時計回り(CW)なので反転してCCWにする
         if (signedArea > 0) {
           ring.reverse();
         }
-
-        // 始点と終点を一致させて閉じる
         ring.push([...ring[0]]);
 
-        return {
-          type: 'Feature',
-          properties: {
-            name: `${f.name}${f.suffix}`,
+        const fullName = `${f.name}${f.suffix}`;
+        const isPref = f.adminLevel === 'prefecture';
+
+        // 国土数値情報 行政区域データ (N03) 標準属性定義
+        // N03_001: 都道府県名
+        // N03_002: 支庁・振興局名（該当なしは null）
+        // N03_003: 郡・政令市名（該当なしは null）
+        // N03_004: 市区町村名（都道府県ポリゴンや所属未定地は null / または名称）
+        // N03_007: 行政区域コード（5桁文字列）
+        const properties = {
+          N03_001: isPref ? fullName : (f.prefecture || null),
+          N03_002: f.subpref && f.subpref.trim() !== '' ? f.subpref.trim() : null,
+          N03_003: f.county && f.county.trim() !== '' ? f.county.trim() : null,
+          N03_004: isPref ? null : (fullName || null),
+          N03_007: f.code && f.code.trim() !== '' ? f.code.trim() : null
+        };
+
+        // 再編集時の色・ラベル復元用メタデータ（任意）
+        if (includeStyleMeta) {
+          properties._editor = {
             base_name: f.name,
             admin_label: f.suffix,
             admin_type: f.adminLevel,
-            prefecture: f.prefecture || '',
-            code: f.code || '',
             fill: f.fillColor,
-            'fill-opacity': f.adminLevel === 'prefecture' ? 0.15 : 0.35,
-            stroke: f.strokeColor,
-            'stroke-width': f.adminLevel === 'prefecture' ? 3.5 : 1.8
-          },
+            stroke: f.strokeColor
+          };
+        }
+
+        return {
+          type: 'Feature',
+          properties,
           geometry: {
             type: 'Polygon',
             coordinates: [ring]
@@ -1348,10 +1307,32 @@
 
     const fc = {
       type: 'FeatureCollection',
+      name: 'N03_fictional_boundaries',
+      crs: {
+        type: 'name',
+        properties: {
+          name: 'urn:ogc:def:crs:OGC:1.3:CRS84'
+        }
+      },
       features
     };
 
     return pretty ? JSON.stringify(fc, null, 2) : JSON.stringify(fc);
+  }
+
+  // 自治体名から「名称」と「区分ラベル（県・市・町など）」を分離するヘルパー
+  function splitAdminNameAndSuffix(fullName) {
+    if (!fullName) return { name: '', suffix: '' };
+    const suffixes = ['県', '都', '道', '府', '市', '区', '町', '村', '島'];
+    for (const s of suffixes) {
+      if (fullName.endsWith(s) && fullName.length > s.length) {
+        return {
+          name: fullName.slice(0, -s.length),
+          suffix: s
+        };
+      }
+    }
+    return { name: fullName, suffix: '' };
   }
 
   function importGeoJSONText(jsonText) {
@@ -1386,7 +1367,6 @@
 
         polygons.forEach((ring, pIdx) => {
           if (ring.length < 3) return;
-          // 末尾の閉じ頂点を除去
           const cleanRing = [...ring];
           if (
             cleanRing.length > 3 &&
@@ -1396,15 +1376,8 @@
             cleanRing.pop();
           }
           cleanRing.forEach(c => allCoords.push(c));
-          polygons._extractedRings = polygons._extractedRings || [];
-          polygons._extractedRings.push({ ring: cleanRing, props, palette, pIdx, idx });
+          imported.push({ ring: cleanRing, props, palette, pIdx, idx });
         });
-
-        if (polygons._extractedRings) {
-          polygons._extractedRings.forEach(item => {
-            imported.push(item);
-          });
-        }
       });
 
       if (imported.length === 0) {
@@ -1412,7 +1385,6 @@
         return;
       }
 
-      // 読み込んだGeoJSONの座標中心に合わせてマッピング原点を自動調整（日本地図など外部GeoJSONも画面中央に表示）
       if (allCoords.length > 0) {
         let minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
         allCoords.forEach(([lon, lat]) => {
@@ -1433,19 +1405,35 @@
 
       state.features = imported.map((item, i) => {
         const { ring, props, palette } = item;
-        const rawName = props.base_name || props.name || props.N03_004 || props.N03_001 || `区画${i + 1}`;
-        const suffix = props.admin_label !== undefined ? props.admin_label : '';
-        const adminLevel = props.admin_type || (String(rawName).endsWith('県') || String(rawName).endsWith('都') || String(rawName).endsWith('府') || String(rawName).endsWith('道') ? 'prefecture' : 'municipality');
+        const editorMeta = props._editor || {};
+
+        // 国土数値情報 (N03_001〜N03_007) からの復元を優先
+        const n03Pref = props.N03_001 || props.prefecture || '';
+        const n03Subpref = props.N03_002 || '';
+        const n03County = props.N03_003 || '';
+        const n03Muni = props.N03_004 || '';
+        const n03Code = props.N03_007 || props.code || '';
+
+        // N03_004 が空で N03_001 がある場合は都道府県ポリゴンとみなす
+        const isPrefPolygon = !n03Muni && Boolean(n03Pref) && editorMeta.admin_type !== 'municipality';
+        const targetFullName = n03Muni || n03Pref || props.name || `区画${i + 1}`;
+        const split = splitAdminNameAndSuffix(targetFullName);
+
+        const baseName = editorMeta.base_name || props.base_name || split.name;
+        const suffix = editorMeta.admin_label !== undefined ? editorMeta.admin_label : split.suffix;
+        const adminLevel = editorMeta.admin_type || props.admin_type || (isPrefPolygon ? 'prefecture' : 'municipality');
 
         return {
           id: `imp_${Date.now()}_${i}`,
-          name: rawName,
+          name: baseName,
           suffix: suffix,
           adminLevel,
-          prefecture: props.prefecture || props.N03_001 || '',
-          code: props.code || props.N03_007 || '',
-          fillColor: props.fill || palette.fill,
-          strokeColor: props.stroke || palette.stroke,
+          prefecture: n03Pref,
+          subpref: n03Subpref,
+          county: n03County,
+          code: n03Code,
+          fillColor: editorMeta.fill || props.fill || palette.fill,
+          strokeColor: editorMeta.stroke || props.stroke || palette.stroke,
           visible: true,
           vertices: ring.map(([lon, lat]) => geoToWorld(lon, lat))
         };
@@ -1455,7 +1443,7 @@
       saveHistory();
       syncUI();
       fitViewToFeatures();
-      showToast(`${state.features.length}件の行政区画を読み込みました`, 'success');
+      showToast(`${state.features.length}件の行政区域データを読み込みました`, 'success');
     } catch (err) {
       console.error(err);
       showToast(`GeoJSONの解析に失敗しました: ${err.message}`, 'error');
@@ -1468,12 +1456,10 @@
   function initEvents() {
     window.addEventListener('resize', resizeCanvas);
 
-    // キャンバスポインタイベント
     canvas.addEventListener('mousedown', handlePointerDown);
     window.addEventListener('mousemove', handlePointerMove);
     window.addEventListener('mouseup', handlePointerUp);
 
-    // タッチ対応
     canvas.addEventListener('touchstart', (e) => {
       if (e.touches.length === 1) handlePointerDown(e);
     }, { passive: false });
@@ -1485,12 +1471,10 @@
     }, { passive: false });
     canvas.addEventListener('touchend', handlePointerUp);
 
-    // 左ツールバーボタン
     document.querySelectorAll('.tool-btn').forEach(btn => {
       btn.addEventListener('click', () => setTool(btn.dataset.tool));
     });
 
-    // スナップ切替
     const btnSnap = document.getElementById('btn-toggle-snap');
     const snapLabel = document.getElementById('snap-label');
     btnSnap.addEventListener('click', () => {
@@ -1504,7 +1488,6 @@
       render();
     });
 
-    // 全体フィット・ズームボタン・Undo/Redo
     document.getElementById('btn-fit-view').addEventListener('click', fitViewToFeatures);
     document.getElementById('btn-undo').addEventListener('click', undo);
     document.getElementById('btn-redo').addEventListener('click', redo);
@@ -1520,18 +1503,16 @@
       render();
     });
 
-    // 描画中フローティングバー
     document.getElementById('btn-finish-polygon').addEventListener('click', finishPolygonDrawing);
     document.getElementById('btn-cancel-polygon').addEventListener('click', cancelPolygonDrawing);
 
-    // ヘッダーボタン群
     document.getElementById('btn-load-sample').addEventListener('click', () => {
       state.features = createSampleFeatures();
       state.selectedId = state.features[3].id;
       saveHistory();
       syncUI();
       fitViewToFeatures();
-      showToast('架空「蒼海県」と4市区町村のサンプルを読み込みました', 'success');
+      showToast('架空「蒼海県」と4市区町村（N03形式）を読み込みました', 'success');
     });
 
     document.getElementById('btn-clear-all').addEventListener('click', () => {
@@ -1544,7 +1525,6 @@
       showToast('全地物をクリアしました（Ctrl+Zで復元可能）');
     });
 
-    // グリッド切替
     const btnGrid = document.getElementById('btn-toggle-grid');
     btnGrid.addEventListener('click', () => {
       state.showGrid = !state.showGrid;
@@ -1552,13 +1532,11 @@
       render();
     });
 
-    // テーマ切替
     document.getElementById('btn-toggle-theme').addEventListener('click', () => {
       document.documentElement.classList.toggle('dark');
       render();
     });
 
-    // モバイル用右パネル開閉
     document.getElementById('btn-toggle-right-panel').addEventListener('click', () => {
       rightPanel.classList.toggle('translate-x-full');
     });
@@ -1584,12 +1562,15 @@
     bindPropChange(propSuffix, 'suffix', true);
     bindPropChange(propPrefecture, 'prefecture', false);
     propPrefecture.addEventListener('change', saveHistory);
+    bindPropChange(propSubpref, 'subpref', false);
+    propSubpref.addEventListener('change', saveHistory);
+    bindPropChange(propCounty, 'county', false);
+    propCounty.addEventListener('change', saveHistory);
     bindPropChange(propCode, 'code', false);
     propCode.addEventListener('change', saveHistory);
     bindPropChange(propFillColor, 'fillColor', true);
     bindPropChange(propStrokeColor, 'strokeColor', true);
 
-    // クイックカラーパレット構築
     const paletteContainer = document.getElementById('color-palette');
     COLOR_PALETTE.forEach(c => {
       const swatch = document.createElement('button');
@@ -1609,7 +1590,6 @@
       paletteContainer.appendChild(swatch);
     });
 
-    // 複製・削除・選択解除
     document.getElementById('btn-duplicate-feature').addEventListener('click', () => {
       const feat = state.features.find(f => f.id === state.selectedId);
       if (!feat) return;
@@ -1645,30 +1625,34 @@
     const modalExport = document.getElementById('modal-export');
     const exportTextarea = document.getElementById('export-json-textarea');
     const exportPretty = document.getElementById('export-pretty-print');
+    const exportIncludeStyle = document.getElementById('export-include-style');
+
+    const refreshExportPreview = () => {
+      exportTextarea.value = buildGeoJSON(exportPretty.checked, exportIncludeStyle.checked);
+    };
 
     document.getElementById('btn-open-export').addEventListener('click', () => {
-      exportTextarea.value = buildGeoJSON(exportPretty.checked);
+      refreshExportPreview();
       modalExport.classList.remove('hidden');
     });
 
-    exportPretty.addEventListener('change', () => {
-      exportTextarea.value = buildGeoJSON(exportPretty.checked);
-    });
+    exportPretty.addEventListener('change', refreshExportPreview);
+    exportIncludeStyle.addEventListener('change', refreshExportPreview);
 
     document.getElementById('btn-copy-geojson').addEventListener('click', () => {
       exportTextarea.select();
       exportTextarea.setSelectionRange(0, 999999);
       try {
         document.execCommand('copy');
-        showToast('GeoJSONをクリップボードにコピーしました', 'success');
+        showToast('N03形式GeoJSONをクリップボードにコピーしました', 'success');
       } catch (err) {
         showToast('コピーに失敗しました', 'error');
       }
     });
 
     document.getElementById('btn-download-geojson').addEventListener('click', () => {
-      const content = buildGeoJSON(exportPretty.checked);
-      let filename = document.getElementById('export-filename').value.trim() || 'fictional_boundaries.geojson';
+      const content = buildGeoJSON(exportPretty.checked, exportIncludeStyle.checked);
+      let filename = document.getElementById('export-filename').value.trim() || 'N03-20260101_99_GML.geojson';
       if (!filename.endsWith('.geojson') && !filename.endsWith('.json')) {
         filename += '.geojson';
       }
@@ -1684,7 +1668,6 @@
       showToast(`「${filename}」をダウンロードしました`, 'success');
     });
 
-    // GeoJSON インポート処理
     document.getElementById('input-import-geojson').addEventListener('change', (e) => {
       const file = e.target.files[0];
       if (!file) return;
@@ -1696,7 +1679,6 @@
       reader.readAsText(file, 'UTF-8');
     });
 
-    // 設定モーダル（下絵・座標系マッピング）
     const modalSettings = document.getElementById('modal-settings');
     document.getElementById('btn-open-settings').addEventListener('click', () => {
       modalSettings.classList.remove('hidden');
@@ -1708,7 +1690,6 @@
       });
     });
 
-    // 下絵画像読み込み
     document.getElementById('input-underlay-image').addEventListener('change', (e) => {
       const file = e.target.files[0];
       if (!file) return;
@@ -1745,7 +1726,6 @@
       render();
     });
 
-    // 座標系マッピング入力
     const updateGeoMapping = () => {
       state.geoMapping.originLon = parseFloat(document.getElementById('coord-origin-lon').value) || 138.0;
       state.geoMapping.originLat = parseFloat(document.getElementById('coord-origin-lat').value) || 35.5;
@@ -1765,9 +1745,7 @@
       });
     });
 
-    // キーボードショートカット
     window.addEventListener('keydown', (e) => {
-      // 入力フォームフォーカス時はショートカット無効化
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
         if (e.key === 'Escape') document.activeElement.blur();
         return;
@@ -1813,7 +1791,6 @@
           break;
         case 'delete':
         case 'backspace':
-          // ホバー中の頂点があれば頂点削除、なければ選択地物削除
           if (state.tool === 'select' && state.selectedId) {
             const feat = state.features.find(f => f.id === state.selectedId);
             if (feat && state.hoveredVertex && state.hoveredVertex.featureId === feat.id) {
@@ -1845,9 +1822,8 @@
   // =========================================================================
   window.addEventListener('DOMContentLoaded', () => {
     initEvents();
-    // 初回サンプルデータをロード
     state.features = createSampleFeatures();
-    state.selectedId = state.features[3].id; // 「蒼海市」を選択状態に
+    state.selectedId = state.features[3].id;
     saveHistory();
     syncUI();
     resizeCanvas();
