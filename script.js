@@ -40,6 +40,7 @@
         name: '蒼海',
         suffix: '県',
         adminLevel: 'prefecture',
+        isEnclave: false,
         prefecture: '蒼海県',
         subpref: '',
         county: '',
@@ -59,6 +60,7 @@
         name: '蒼海',
         suffix: '市',
         adminLevel: 'group',
+        isEnclave: false,
         prefecture: '蒼海県',
         subpref: '',
         county: '蒼海市',
@@ -77,6 +79,7 @@
         name: '中央',
         suffix: '区',
         adminLevel: 'municipality',
+        isEnclave: false,
         prefecture: '蒼海県',
         subpref: '',
         county: '蒼海市',
@@ -95,6 +98,7 @@
         name: '西湊',
         suffix: '区',
         adminLevel: 'municipality',
+        isEnclave: false,
         prefecture: '蒼海県',
         subpref: '',
         county: '蒼海市',
@@ -113,6 +117,7 @@
         name: '北嶺',
         suffix: '郡',
         adminLevel: 'group',
+        isEnclave: false,
         prefecture: '蒼海県',
         subpref: '',
         county: '北嶺郡',
@@ -131,6 +136,7 @@
         name: '北嶺',
         suffix: '町',
         adminLevel: 'municipality',
+        isEnclave: false,
         prefecture: '蒼海県',
         subpref: '',
         county: '北嶺郡',
@@ -149,6 +155,7 @@
         name: '東雲',
         suffix: '市',
         adminLevel: 'municipality',
+        isEnclave: false,
         prefecture: '蒼海県',
         subpref: '',
         county: '',
@@ -172,6 +179,7 @@
     selectedId: null,
     pendingParentId: null,
     pendingAdminLevel: null,
+    pendingIsEnclave: false,
     tool: 'select',
     snapEnabled: true,
     topologySyncEnabled: true,
@@ -252,7 +260,7 @@
   const layerCount = document.getElementById('layer-count');
 
   // =========================================================================
-  // 4. ユーティリティ関数（座標変換・幾何演算・ポリゴン統合）
+  // 4. ユーティリティ関数（座標変換・幾何演算・ポリゴン統合・飛び地制御）
   // =========================================================================
   function showToast(message, type = 'info') {
     const container = document.getElementById('toast-container');
@@ -350,6 +358,26 @@
     return false;
   }
 
+  // 2つのポリゴンが接触・交差・包含しているかを判定
+  function doPolygonsTouchOrOverlap(polyA, polyB, eps = 3.0) {
+    for (const v of polyA) {
+      if (isPointOnBoundaryOrInside(v, polyB, eps)) return true;
+    }
+    for (const v of polyB) {
+      if (isPointOnBoundaryOrInside(v, polyA, eps)) return true;
+    }
+    for (let i = 0; i < polyA.length; i++) {
+      const a1 = polyA[i];
+      const a2 = polyA[(i + 1) % polyA.length];
+      for (let j = 0; j < polyB.length; j++) {
+        const b1 = polyB[j];
+        const b2 = polyB[(j + 1) % polyB.length];
+        if (getSegmentIntersection(a1, a2, b1, b2)) return true;
+      }
+    }
+    return false;
+  }
+
   function getPolygonCentroid(vertices) {
     if (!vertices || vertices.length === 0) return { x: 0, y: 0 };
     let area = 0, cx = 0, cy = 0;
@@ -439,14 +467,12 @@
       const p2 = verts[(i + 1) % verts.length];
       area += (p2.x - p1.x) * (p2.y + p1.y);
     }
-    // Y軸下向き座標系では area < 0 が時計回り
     if (area > 0) {
       return [...verts].reverse().map(v => ({ x: v.x, y: v.y }));
     }
     return verts.map(v => ({ x: v.x, y: v.y }));
   }
 
-  // 凸包フォールバック（離れ島として追加された場合でも確実に親ポリゴンを広げる）
   function computeConvexHull(points) {
     const pts = [...points].sort((a, b) => a.x === b.x ? a.y - b.y : a.x - b.x);
     if (pts.length <= 3) return pts;
@@ -471,8 +497,7 @@
     return lower.concat(upper);
   }
 
-  // 複数のポリゴン配列を受け取り、全体の外周輪郭（和集合の外縁ポリゴン）を返す
-  function computeUnionOuterBoundary(polygons) {
+  function computeUnionOuterBoundary(polygons, allowConvexFallback = true) {
     const validPolys = polygons
       .filter(p => Array.isArray(p) && p.length >= 3)
       .map(p => ensureClockwiseRing(p));
@@ -480,7 +505,6 @@
     if (validPolys.length === 0) return [];
     if (validPolys.length === 1) return validPolys[0];
 
-    // 1. すべての辺を収集
     const rawEdges = [];
     validPolys.forEach((poly, polyIdx) => {
       for (let i = 0; i < poly.length; i++) {
@@ -492,7 +516,6 @@
       }
     });
 
-    // 2. 交点および他ポリゴンの頂点が辺上に乗る位置で辺を細分化
     const splitParams = rawEdges.map(() => [0, 1]);
 
     for (let i = 0; i < rawEdges.length; i++) {
@@ -513,7 +536,6 @@
       }
     }
 
-    // 3. 座標スナップ（2.5px以内の近接頂点を同一ノードに統合して隙間を防止）
     const canonicalNodes = [];
     function getCanonicalPoint(pt) {
       for (const node of canonicalNodes) {
@@ -524,7 +546,6 @@
       return newNode;
     }
 
-    // 4. 細分化された有向サブセグメントから、外周境界辺のみを抽出
     const boundaryEdges = [];
     for (let i = 0; i < rawEdges.length; i++) {
       const e = rawEdges[i];
@@ -551,7 +572,6 @@
         const dy = p1.y - p0.y;
         const len = Math.hypot(dx, dy);
 
-        // 時計回り進行方向 (dx, dy) の外側法線方向（Y軸下向き系では (dy/len, -dx/len)）
         const testOutsidePt = {
           x: mx + (dy / len) * 2.2,
           y: my - (dx / len) * 2.2
@@ -566,7 +586,6 @@
         }
 
         if (!isInsideAny) {
-          // 逆向きの辺がすでにある場合は共有境界（内壁）なので相殺除去
           const revIdx = boundaryEdges.findIndex(be => dist(be.from, p1) < 1.0 && dist(be.to, p0) < 1.0);
           if (revIdx !== -1) {
             boundaryEdges.splice(revIdx, 1);
@@ -580,7 +599,6 @@
       }
     }
 
-    // 5. 外周辺を連結して最大の閉ループ（最外周ポリゴン）を構築
     const loops = [];
     for (let startIdx = 0; startIdx < boundaryEdges.length; startIdx++) {
       if (boundaryEdges[startIdx].used) continue;
@@ -630,13 +648,15 @@
       const bestLoop = removeCollinearVertices(loops[0]);
       const bestArea = Math.abs(polygonSignedArea(bestLoop));
 
-      // 面積が元の親ポリゴン以上に広がっている、または頂点が変わっていれば採用
       if (bestArea >= originalArea * 0.98) {
         return bestLoop;
       }
     }
 
-    // 離れ島（完全に離れた位置）に新しい市区町村を追加した場合は、全体を包含する外郭で拡張
+    if (!allowConvexFallback) {
+      return validPolys[0];
+    }
+
     const allPts = validPolys.flat();
     return computeConvexHull(allPts);
   }
@@ -670,7 +690,10 @@
   }
 
   // 新しく追加・変形された区画（childFeat）を含めて、親（郡・政令市）および祖父（県）の外周境界を自動拡張
+  // ※ 飛び地(isEnclave)の親同士や完全に離れた飛び地は本土と無理に合体させず、接触・内包側だけを拡張する
   function expandAncestorBoundariesWithNewChild(childFeat) {
+    if (childFeat.isEnclave) return [];
+
     let currChild = childFeat;
     const expandedNames = [];
 
@@ -679,11 +702,10 @@
       if (!parent) break;
 
       if (parent.vertices && parent.vertices.length >= 3 && currChild.vertices && currChild.vertices.length >= 3) {
-        // 子区画の頂点が1つでも親ポリゴンの外側にあるか判定
         const hasProtrudingVertex = currChild.vertices.some(v => !isPointOnBoundaryOrInside(v, parent.vertices, 1.5));
 
         if (hasProtrudingVertex) {
-          const mergedOuter = computeUnionOuterBoundary([parent.vertices, currChild.vertices]);
+          const mergedOuter = computeUnionOuterBoundary([parent.vertices, currChild.vertices], true);
           if (mergedOuter && mergedOuter.length >= 3) {
             parent.vertices = mergedOuter;
             expandedNames.push(`${parent.name}${parent.suffix}`);
@@ -696,29 +718,70 @@
     return expandedNames;
   }
 
-  // 指定した親区画（県・郡・政令市）の配下にある全子孫ポリゴンから外周境界を再構築する
-  function rebuildParentBoundaryFromDescendants(parentFeat) {
-    const collectDescendantPolygons = (pid) => {
-      const directChildren = state.features.filter(f => f.parentId === pid);
-      let polys = [];
+  // 指定した親区画（県・郡・政令市）の配下にある全子孫ポリゴンを親の境界範囲内に取り込む
+  // （完全に離れた飛び地子区画は本土と合体させず、親ポリゴンと接触・重なりがある子区画をすべて包含するように拡張）
+  function fitParentBoundaryToEncloseChildren(parentFeat) {
+    const collectDescendantFeatures = (pid) => {
+      const directChildren = state.features.filter(f => f.parentId === pid && !f.isEnclave);
+      let list = [];
       for (const ch of directChildren) {
-        if (ch.vertices && ch.vertices.length >= 3) {
-          polys.push(ch.vertices);
-        }
-        polys = polys.concat(collectDescendantPolygons(ch.id));
+        list.push(ch);
+        list = list.concat(collectDescendantFeatures(ch.id));
       }
-      return polys;
+      return list;
     };
 
-    const childPolys = collectDescendantPolygons(parentFeat.id);
-    if (childPolys.length === 0) return false;
-
-    const unionOuter = computeUnionOuterBoundary(childPolys);
-    if (unionOuter && unionOuter.length >= 3) {
-      parentFeat.vertices = unionOuter;
-      return true;
+    const descendants = collectDescendantFeatures(parentFeat.id).filter(f => f.vertices && f.vertices.length >= 3);
+    if (descendants.length === 0) {
+      return { ok: false, reason: 'no_children' };
     }
-    return false;
+
+    // 飛び地（この県に紐づく別ポリゴン）が存在する場合は、それぞれの島・飛び地ごとに近い子区画だけをグループ化
+    const enclavePeers = parentFeat.adminLevel === 'prefecture'
+      ? state.features.filter(f => f.adminLevel === 'prefecture' && f.isEnclave && f.parentId === parentFeat.id)
+      : [];
+
+    if (enclavePeers.length > 0 && !parentFeat.isEnclave) {
+      // 本土側の子区画と、飛び地側の子区画を振り分けてそれぞれの境界を更新
+      const mainlandChildren = [];
+      const enclaveMap = new Map(enclavePeers.map(ep => [ep.id, []]));
+
+      for (const desc of descendants) {
+        let assignedEnclave = null;
+        for (const ep of enclavePeers) {
+          if (doPolygonsTouchOrOverlap(desc.vertices, ep.vertices, 8.0)) {
+            assignedEnclave = ep;
+            break;
+          }
+        }
+        if (assignedEnclave) {
+          enclaveMap.get(assignedEnclave.id).push(desc.vertices);
+        } else {
+          mainlandChildren.push(desc.vertices);
+        }
+      }
+
+      if (mainlandChildren.length > 0) {
+        parentFeat.vertices = computeUnionOuterBoundary([parentFeat.vertices, ...mainlandChildren], true);
+      }
+      for (const ep of enclavePeers) {
+        const epPolys = enclaveMap.get(ep.id);
+        if (epPolys && epPolys.length > 0) {
+          ep.vertices = computeUnionOuterBoundary([ep.vertices, ...epPolys], true);
+        }
+      }
+      return { ok: true, count: descendants.length, enclaveCount: enclavePeers.length };
+    }
+
+    // 通常（単一エリアまたは飛び地単体を選択中）: 親の現在の外周と配下の全ポリゴンを統合して範囲内に収める
+    const allPolys = [parentFeat.vertices, ...descendants.map(d => d.vertices)];
+    const enclosedOuter = computeUnionOuterBoundary(allPolys, true);
+    if (enclosedOuter && enclosedOuter.length >= 3) {
+      parentFeat.vertices = enclosedOuter;
+      return { ok: true, count: descendants.length, enclaveCount: 0 };
+    }
+
+    return { ok: false, reason: 'failed' };
   }
 
   // 親階層（都道府県・郡・政令市）からN03属性（N03_001〜003）を自動継承する
@@ -726,6 +789,17 @@
     if (!feat.parentId) return;
     const parent = state.features.find(f => f.id === feat.parentId);
     if (!parent) return;
+
+    // 飛び地（同じ都道府県の独立エリア）の場合
+    if (feat.adminLevel === 'prefecture' && feat.isEnclave) {
+      feat.name = parent.name;
+      feat.suffix = parent.suffix;
+      feat.prefecture = `${parent.name}${parent.suffix}`;
+      feat.code = parent.code;
+      feat.fillColor = parent.fillColor;
+      feat.strokeColor = parent.strokeColor;
+      return;
+    }
 
     if (parent.adminLevel === 'prefecture') {
       feat.prefecture = `${parent.name}${parent.suffix}`;
@@ -1030,7 +1104,7 @@
 
     let fillAlpha = 0.32;
     if (feat.adminLevel === 'prefecture') {
-      fillAlpha = isSelected ? 0.16 : 0.07;
+      fillAlpha = isSelected ? 0.18 : 0.08;
     } else if (feat.adminLevel === 'group') {
       fillAlpha = isSelected ? 0.22 : 0.11;
     } else {
@@ -1043,7 +1117,7 @@
     ctx.strokeStyle = isSelected ? '#2563eb' : feat.strokeColor;
     if (feat.adminLevel === 'prefecture') {
       ctx.lineWidth = isSelected ? 4.5 : 3.5;
-      ctx.setLineDash([12, 5]);
+      ctx.setLineDash(feat.isEnclave ? [8, 4, 2, 4] : [12, 5]);
     } else if (feat.adminLevel === 'group') {
       ctx.lineWidth = isSelected ? 3.5 : 2.6;
       ctx.setLineDash([10, 3, 2, 3]);
@@ -1064,16 +1138,17 @@
       ctx.stroke();
     }
 
-    const fullName = `${feat.name}${feat.suffix}`;
-    if (fullName.trim() !== '') {
+    const baseFullName = `${feat.name}${feat.suffix}`;
+    const displayLabel = feat.isEnclave ? `${baseFullName}（飛び地）` : baseFullName;
+    if (displayLabel.trim() !== '') {
       const centroidWorld = getPolygonCentroid(feat.vertices);
       const centerScreen = worldToScreen(centroidWorld.x, centroidWorld.y);
 
       let offsetY = 0;
       let fontSize = 12 * Math.sqrt(state.camera.zoom);
       if (feat.adminLevel === 'prefecture') {
-        offsetY = -22;
-        fontSize = Math.max(13, Math.min(22, 16 * Math.sqrt(state.camera.zoom)));
+        offsetY = feat.isEnclave ? -16 : -22;
+        fontSize = Math.max(12, Math.min(22, (feat.isEnclave ? 14 : 16) * Math.sqrt(state.camera.zoom)));
       } else if (feat.adminLevel === 'group') {
         offsetY = -12;
         fontSize = Math.max(11, Math.min(18, 13.5 * Math.sqrt(state.camera.zoom)));
@@ -1087,14 +1162,14 @@
 
       ctx.lineWidth = 3.5;
       ctx.strokeStyle = isDark ? 'rgba(15, 23, 42, 0.88)' : 'rgba(255, 255, 255, 0.92)';
-      ctx.strokeText(fullName, centerScreen.x, centerScreen.y + offsetY);
+      ctx.strokeText(displayLabel, centerScreen.x, centerScreen.y + offsetY);
 
       ctx.fillStyle = feat.adminLevel === 'prefecture'
         ? (isDark ? '#93c5fd' : '#1e3a8a')
         : feat.adminLevel === 'group'
         ? (isDark ? '#c4b5fd' : '#3730a3')
         : (isDark ? '#f1f5f9' : '#0f172a');
-      ctx.fillText(fullName, centerScreen.x, centerScreen.y + offsetY);
+      ctx.fillText(displayLabel, centerScreen.x, centerScreen.y + offsetY);
     }
 
     ctx.restore();
@@ -1162,14 +1237,14 @@
       for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
       ctx.lineTo(cursorScreen.x, cursorScreen.y);
       ctx.closePath();
-      ctx.fillStyle = 'rgba(37, 99, 235, 0.16)';
+      ctx.fillStyle = state.pendingIsEnclave ? 'rgba(14, 165, 233, 0.2)' : 'rgba(37, 99, 235, 0.16)';
       ctx.fill();
     }
 
     ctx.beginPath();
     ctx.moveTo(pts[0].x, pts[0].y);
     for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-    ctx.strokeStyle = '#2563eb';
+    ctx.strokeStyle = state.pendingIsEnclave ? '#0284c7' : '#2563eb';
     ctx.lineWidth = 2.5;
     ctx.stroke();
 
@@ -1452,10 +1527,9 @@
 
   function handlePointerUp() {
     if (state.dragMode === 'vertex' || state.dragMode === 'feature') {
-      // 市区町村や郡の頂点を外側に広げた場合も、親の県・郡の外周境界が自動拡張される
       if (state.topologySyncEnabled && state.selectedId) {
         const movedFeat = state.features.find(f => f.id === state.selectedId);
-        if (movedFeat && movedFeat.parentId) {
+        if (movedFeat && movedFeat.parentId && !movedFeat.isEnclave) {
           expandAncestorBoundariesWithNewChild(movedFeat);
         }
       }
@@ -1528,24 +1602,32 @@
   }, { passive: false });
 
   // =========================================================================
-  // 9. 新規ポリゴン・入れ子階層作成処理（追加した領域も含めて県・郡の境界を自動拡張）
+  // 9. 新規ポリゴン・飛び地・入れ子階層作成処理
   // =========================================================================
-  function startDrawingChildFeature(parentId, targetAdminLevel) {
+  function startDrawingChildFeature(parentId, targetAdminLevel, isEnclave = false) {
     state.pendingParentId = parentId;
     state.pendingAdminLevel = targetAdminLevel;
+    state.pendingIsEnclave = isEnclave;
+
     const parent = state.features.find(f => f.id === parentId);
-    const levelLabel = targetAdminLevel === 'prefecture'
+    const levelLabel = isEnclave
+      ? '飛び地エリア（独立ポリゴン）'
+      : targetAdminLevel === 'prefecture'
       ? '都道府県'
       : targetAdminLevel === 'group'
       ? '郡・政令市'
       : '市区町村・区';
 
     drawingTargetLabel.textContent = parent
-      ? `「${parent.name}${parent.suffix}」配下の${levelLabel}`
+      ? `「${parent.name}${parent.suffix}」の${levelLabel}`
       : `新規${levelLabel}`;
 
     setTool('polygon');
-    showToast(`地図をクリックして境界を描画してください（はみ出した分は親の県・郡も自動拡張します）`);
+    if (isEnclave) {
+      showToast('飛び地・離れ島のエリアを描画してください（本土と繋がらずそのエリアだけの大きさになります）');
+    } else {
+      showToast('地図をクリックして境界を描画してください（はみ出した分は親の県・郡も自動拡張します）');
+    }
   }
 
   function createNewFeatureFromVertices(vertices) {
@@ -1554,6 +1636,7 @@
 
     let parentId = state.pendingParentId;
     let adminLevel = state.pendingAdminLevel;
+    const isEnclave = Boolean(state.pendingIsEnclave);
 
     if (!adminLevel) {
       const currentSelected = state.features.find(f => f.id === state.selectedId);
@@ -1587,7 +1670,18 @@
 
     let defaultName = `新規第${idx}`;
     let defaultSuffix = '市';
-    if (adminLevel === 'prefecture') {
+    let defaultCode = adminLevel === 'prefecture' ? '99000' : `99${String(200 + idx).padStart(3, '0')}`;
+    let fillColor = palette.fill;
+    let strokeColor = palette.stroke;
+
+    if (isEnclave && parentFeat) {
+      // 飛び地エリアはそのエリアだけの大きさを持つ独立した同県ポリゴンとして作成
+      defaultName = parentFeat.name;
+      defaultSuffix = parentFeat.suffix;
+      defaultCode = parentFeat.code;
+      fillColor = parentFeat.fillColor;
+      strokeColor = parentFeat.strokeColor;
+    } else if (adminLevel === 'prefecture') {
       defaultName = '新規';
       defaultSuffix = '県';
     } else if (adminLevel === 'group') {
@@ -1597,7 +1691,7 @@
       defaultName = `第${idx}`;
       defaultSuffix = '区';
     } else if (parentFeat && parentFeat.suffix === '郡') {
-      defaultName = `新設`;
+      defaultName = '新設';
       defaultSuffix = '町';
     }
 
@@ -1607,12 +1701,13 @@
       name: defaultName,
       suffix: defaultSuffix,
       adminLevel,
+      isEnclave,
       prefecture: '',
       subpref: '',
       county: '',
-      code: adminLevel === 'prefecture' ? '99000' : `99${String(200 + idx).padStart(3, '0')}`,
-      fillColor: palette.fill,
-      strokeColor: palette.stroke,
+      code: defaultCode,
+      fillColor,
+      strokeColor,
       visible: true,
       expanded: true,
       vertices
@@ -1622,11 +1717,20 @@
 
     state.pendingParentId = null;
     state.pendingAdminLevel = null;
+    state.pendingIsEnclave = false;
     drawingTargetLabel.textContent = '新規ポリゴン';
 
     state.features.push(newFeat);
 
-    // 追加された区画を含めて親（郡・政令市）および祖父（都道府県）の外周境界を自動拡張
+    if (isEnclave) {
+      state.selectedId = newFeat.id;
+      saveHistory();
+      syncUI();
+      render();
+      showToast(`「${newFeat.name}${newFeat.suffix}」の飛び地エリア（独立サイズ）を追加しました`, 'success');
+      return;
+    }
+
     const expandedAncestors = expandAncestorBoundariesWithNewChild(newFeat);
 
     state.selectedId = newFeat.id;
@@ -1657,6 +1761,7 @@
     state.drawingVertices = [];
     state.pendingParentId = null;
     state.pendingAdminLevel = null;
+    state.pendingIsEnclave = false;
     drawingTargetLabel.textContent = '新規ポリゴン';
     updateDrawingToolbar();
     render();
@@ -1776,17 +1881,23 @@
       propForm.classList.remove('hidden');
       propAdminLevel.value = selectedFeat.adminLevel;
 
-      parentSelectorWrapper.classList.toggle('hidden', selectedFeat.adminLevel === 'prefecture');
-      propParentId.innerHTML = '<option value="">（なし / 独立）</option>';
+      parentSelectorWrapper.classList.toggle('hidden', selectedFeat.adminLevel === 'prefecture' && !selectedFeat.isEnclave);
+      propParentId.innerHTML = '<option value="">（なし / 本土・独立）</option>';
       state.features.forEach(candidate => {
         if (candidate.id === selectedFeat.id) return;
-        if (selectedFeat.adminLevel === 'group' && candidate.adminLevel !== 'prefecture') return;
-        if (selectedFeat.adminLevel === 'municipality' && !['prefecture', 'group'].includes(candidate.adminLevel)) return;
+        if (selectedFeat.adminLevel === 'prefecture' && selectedFeat.isEnclave) {
+          if (candidate.adminLevel !== 'prefecture' || candidate.isEnclave) return;
+        } else if (selectedFeat.adminLevel === 'group') {
+          if (candidate.adminLevel !== 'prefecture') return;
+        } else if (selectedFeat.adminLevel === 'municipality') {
+          if (!['prefecture', 'group'].includes(candidate.adminLevel)) return;
+        }
 
         const opt = document.createElement('option');
         opt.value = candidate.id;
         const prefix = candidate.adminLevel === 'group' ? '└ ' : '';
-        opt.textContent = `${prefix}${candidate.name}${candidate.suffix}`;
+        const enclaveTag = candidate.isEnclave ? '（飛び地）' : '';
+        opt.textContent = `${prefix}${candidate.name}${candidate.suffix}${enclaveTag}`;
         propParentId.appendChild(opt);
       });
       propParentId.value = selectedFeat.parentId || '';
@@ -1800,62 +1911,117 @@
       propFillColor.value = selectedFeat.fillColor;
       propStrokeColor.value = selectedFeat.strokeColor;
 
+      // 県・郡の設定パネル内に「飛び地設定」および「配下の市区町村・郡を範囲内に入れる」ボタンを構築
       childCreatorBar.innerHTML = '';
       if (selectedFeat.adminLevel === 'prefecture') {
+        const mainPrefId = selectedFeat.isEnclave ? (selectedFeat.parentId || selectedFeat.id) : selectedFeat.id;
+        const enclaves = state.features.filter(f => f.adminLevel === 'prefecture' && f.isEnclave && f.parentId === mainPrefId);
+
         childCreatorBar.innerHTML = `
-          <div class="space-y-1.5 pt-1">
-            <div class="flex gap-1.5">
-              <button type="button" id="btn-add-sub-group" class="flex-1 py-1.5 px-2 rounded-lg text-[11px] font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition">
+          <div class="space-y-2 pt-1.5 border-t border-slate-200/80 dark:border-slate-800">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-bold text-slate-600 dark:text-slate-300">県の領域・飛び地・配下区画の操作</span>
+              ${selectedFeat.isEnclave
+                ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-300 font-semibold">飛び地エリア選択中</span>'
+                : `<span class="text-[10px] text-slate-400">飛び地: ${enclaves.length}箇所</span>`
+              }
+            </div>
+
+            <button type="button" id="btn-enclose-children-pref" class="w-full py-2 px-2.5 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition flex items-center justify-center gap-1.5">
+              <span>📦 配下の市区町村・郡をすべて範囲内に入れる</span>
+            </button>
+
+            <div class="grid grid-cols-2 gap-1.5">
+              <button type="button" id="btn-add-sub-group" class="py-1.5 px-2 rounded-lg text-[11px] font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition">
                 ＋ 郡・政令市を描画
               </button>
-              <button type="button" id="btn-add-sub-muni" class="flex-1 py-1.5 px-2 rounded-lg text-[11px] font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition">
+              <button type="button" id="btn-add-sub-muni" class="py-1.5 px-2 rounded-lg text-[11px] font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition">
                 ＋ 市区町村を描画
               </button>
             </div>
-            <button type="button" id="btn-rebuild-parent-boundary" class="w-full py-1.5 px-2 rounded-lg text-[11px] font-medium bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800 transition">
-              🔄 配下の郡・市区町村に合わせて県境を自動再構築
-            </button>
+
+            <div class="p-2 rounded-lg bg-sky-50/70 dark:bg-sky-950/30 border border-sky-200/80 dark:border-sky-800/70 space-y-1.5">
+              <div class="flex items-center justify-between">
+                <span class="text-[11px] font-semibold text-sky-800 dark:text-sky-300">🏝️ 飛び地設定（そのエリアだけの大きさ）</span>
+              </div>
+              <p class="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                本土の県境と繋げず、飛び地・離れ島エリアだけの大きさで同県の区域を追加します。
+              </p>
+              <button type="button" id="btn-add-pref-enclave" class="w-full py-1.5 px-2 rounded-md text-[11px] font-semibold bg-sky-600 hover:bg-sky-700 text-white transition">
+                ＋ 飛び地エリアを描画（独立サイズ）
+              </button>
+              <label class="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-300 pt-0.5 cursor-pointer">
+                <input type="checkbox" id="chk-pref-is-enclave" ${selectedFeat.isEnclave ? 'checked' : ''} class="rounded text-sky-600">
+                <span>このポリゴンを「飛び地エリア（独立サイズ）」として扱う</span>
+              </label>
+            </div>
           </div>
         `;
-        document.getElementById('btn-add-sub-group').addEventListener('click', () => {
-          startDrawingChildFeature(selectedFeat.id, 'group');
-        });
-        document.getElementById('btn-add-sub-muni').addEventListener('click', () => {
-          startDrawingChildFeature(selectedFeat.id, 'municipality');
-        });
-        document.getElementById('btn-rebuild-parent-boundary').addEventListener('click', () => {
-          if (rebuildParentBoundaryFromDescendants(selectedFeat)) {
+
+        document.getElementById('btn-enclose-children-pref').addEventListener('click', () => {
+          const res = fitParentBoundaryToEncloseChildren(selectedFeat);
+          if (res.ok) {
             saveHistory();
             render();
-            showToast(`「${selectedFeat.name}${selectedFeat.suffix}」の外周境界を配下区画に合わせて再構築しました`, 'success');
+            showToast(`配下の${res.count}区画がすべて「${selectedFeat.name}${selectedFeat.suffix}」の範囲内に収まるよう境界を更新しました`, 'success');
           } else {
-            showToast('配下に所属する区画がありません', 'error');
+            showToast('配下に所属する市区町村・郡がありません', 'error');
           }
+        });
+
+        document.getElementById('btn-add-sub-group').addEventListener('click', () => {
+          startDrawingChildFeature(selectedFeat.id, 'group', false);
+        });
+
+        document.getElementById('btn-add-sub-muni').addEventListener('click', () => {
+          startDrawingChildFeature(selectedFeat.id, 'municipality', false);
+        });
+
+        document.getElementById('btn-add-pref-enclave').addEventListener('click', () => {
+          startDrawingChildFeature(mainPrefId, 'prefecture', true);
+        });
+
+        document.getElementById('chk-pref-is-enclave').addEventListener('change', (e) => {
+          selectedFeat.isEnclave = e.target.checked;
+          if (selectedFeat.isEnclave && !selectedFeat.parentId) {
+            const otherMainPref = state.features.find(f => f.adminLevel === 'prefecture' && !f.isEnclave && f.id !== selectedFeat.id);
+            if (otherMainPref) {
+              selectedFeat.parentId = otherMainPref.id;
+              inheritHierarchyAttributes(selectedFeat);
+            }
+          } else if (!selectedFeat.isEnclave) {
+            selectedFeat.parentId = null;
+          }
+          saveHistory();
+          syncUI();
+          render();
+          showToast(selectedFeat.isEnclave ? '飛び地エリア（独立サイズ）に設定しました' : '本土（親都道府県）に設定しました');
         });
       } else if (selectedFeat.adminLevel === 'group') {
         const subLabel = selectedFeat.suffix === '市' ? '行政区（〇〇区）を描画' : '配下の町村を描画';
         childCreatorBar.innerHTML = `
-          <div class="space-y-1.5 pt-1">
+          <div class="space-y-1.5 pt-1 border-t border-slate-200/80 dark:border-slate-800">
+            <button type="button" id="btn-enclose-children-group" class="w-full py-1.5 px-2 rounded-lg text-[11px] font-bold bg-blue-600 hover:bg-blue-700 text-white transition">
+              📦 配下の市区町村を範囲内に入れる（県境も連動）
+            </button>
             <button type="button" id="btn-add-sub-ward" class="w-full py-1.5 px-2 rounded-lg text-[11px] font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition">
               ＋ ${subLabel}
             </button>
-            <button type="button" id="btn-rebuild-group-boundary" class="w-full py-1.5 px-2 rounded-lg text-[11px] font-medium bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800 transition">
-              🔄 配下の市区町村に合わせて境界（および県境）を自動更新
-            </button>
           </div>
         `;
-        document.getElementById('btn-add-sub-ward').addEventListener('click', () => {
-          startDrawingChildFeature(selectedFeat.id, 'municipality');
-        });
-        document.getElementById('btn-rebuild-group-boundary').addEventListener('click', () => {
-          if (rebuildParentBoundaryFromDescendants(selectedFeat)) {
+        document.getElementById('btn-enclose-children-group').addEventListener('click', () => {
+          const res = fitParentBoundaryToEncloseChildren(selectedFeat);
+          if (res.ok) {
             expandAncestorBoundariesWithNewChild(selectedFeat);
             saveHistory();
             render();
-            showToast(`「${selectedFeat.name}${selectedFeat.suffix}」と親都道府県の境界を更新しました`, 'success');
+            showToast(`「${selectedFeat.name}${selectedFeat.suffix}」と親都道府県の範囲内に配下区画を収めました`, 'success');
           } else {
             showToast('配下に所属する区画がありません', 'error');
           }
+        });
+        document.getElementById('btn-add-sub-ward').addEventListener('click', () => {
+          startDrawingChildFeature(selectedFeat.id, 'municipality', false);
         });
       }
     } else {
@@ -1877,12 +2043,15 @@
       const isSelected = feat.id === state.selectedId;
 
       const badgeMap = {
-        prefecture: { text: '都道府県', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300' },
+        prefecture: feat.isEnclave
+          ? { text: '飛び地(県)', cls: 'bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-300' }
+          : { text: '都道府県', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300' },
         group: { text: '郡/政令市', cls: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300' },
         municipality: { text: '市区町村', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300' },
         island: { text: '所属未定', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300' }
       };
       const badge = badgeMap[feat.adminLevel] || badgeMap.municipality;
+      const nodeTitle = feat.isEnclave ? `${feat.name}${feat.suffix}（飛び地）` : `${feat.name}${feat.suffix}`;
 
       const item = document.createElement('div');
       item.style.marginLeft = `${depth * 14}px`;
@@ -1906,7 +2075,7 @@
           </button>
           <span class="w-2.5 h-2.5 rounded-xs shrink-0 border border-black/20" style="background-color: ${feat.fillColor};"></span>
           <div class="truncate ml-0.5">
-            <div class="font-semibold truncate ${feat.visible ? '' : 'opacity-45 line-through'}">${escapeHtml(feat.name + feat.suffix)}</div>
+            <div class="font-semibold truncate ${feat.visible ? '' : 'opacity-45 line-through'}">${escapeHtml(nodeTitle)}</div>
             <div class="flex items-center gap-1 mt-0.5">
               <span class="text-[9px] px-1 py-0.2 rounded font-medium ${badge.cls}">${badge.text}</span>
               <span class="text-[9px] font-mono text-slate-400">${escapeHtml(feat.code || '')}</span>
@@ -1914,7 +2083,7 @@
           </div>
         </div>
         ${(feat.adminLevel === 'prefecture' || feat.adminLevel === 'group')
-          ? `<button type="button" data-action="add-child" title="配下に市区町村を追加描画（県・郡も自動拡張）" class="opacity-0 group-hover:opacity-100 px-1.5 py-0.5 rounded bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300 text-[10px] font-bold shrink-0 transition">＋追加</button>`
+          ? `<button type="button" data-action="add-child" title="配下に市区町村を追加描画" class="opacity-0 group-hover:opacity-100 px-1.5 py-0.5 rounded bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300 text-[10px] font-bold shrink-0 transition">＋追加</button>`
           : ''
         }
       `;
@@ -1933,7 +2102,7 @@
             syncUI();
             render();
           } else if (action === 'add-child') {
-            startDrawingChildFeature(feat.id, 'municipality');
+            startDrawingChildFeature(feat.id, 'municipality', false);
           }
           return;
         }
@@ -1998,6 +2167,7 @@
           properties._editor = {
             id: f.id,
             parent_id: f.parentId || null,
+            is_enclave: Boolean(f.isEnclave),
             base_name: f.name,
             admin_label: f.suffix,
             admin_type: f.adminLevel,
@@ -2136,6 +2306,7 @@
         return {
           id: editorMeta.id || `imp_${Date.now()}_${i}`,
           parentId: editorMeta.parent_id || null,
+          isEnclave: Boolean(editorMeta.is_enclave),
           name: baseName,
           suffix: suffix,
           adminLevel,
@@ -2154,7 +2325,7 @@
       state.features.forEach(feat => {
         if (feat.parentId) return;
         if (feat.adminLevel === 'group' && feat.prefecture) {
-          const pref = state.features.find(p => p.adminLevel === 'prefecture' && `${p.name}${p.suffix}` === feat.prefecture);
+          const pref = state.features.find(p => p.adminLevel === 'prefecture' && !p.isEnclave && `${p.name}${p.suffix}` === feat.prefecture);
           if (pref) feat.parentId = pref.id;
         } else if (feat.adminLevel === 'municipality') {
           if (feat.county) {
@@ -2165,7 +2336,7 @@
             }
           }
           if (feat.prefecture) {
-            const pref = state.features.find(p => p.adminLevel === 'prefecture' && `${p.name}${p.suffix}` === feat.prefecture);
+            const pref = state.features.find(p => p.adminLevel === 'prefecture' && !p.isEnclave && `${p.name}${p.suffix}` === feat.prefecture);
             if (pref) feat.parentId = pref.id;
           }
         }
@@ -2252,15 +2423,15 @@
     document.getElementById('btn-cancel-polygon').addEventListener('click', cancelPolygonDrawing);
 
     document.getElementById('btn-create-root-pref').addEventListener('click', () => {
-      startDrawingChildFeature(null, 'prefecture');
+      startDrawingChildFeature(null, 'prefecture', false);
     });
     document.getElementById('btn-add-pref-quick').addEventListener('click', () => {
-      startDrawingChildFeature(null, 'prefecture');
+      startDrawingChildFeature(null, 'prefecture', false);
     });
 
     document.getElementById('btn-load-sample').addEventListener('click', () => {
       state.features = createSampleFeatures();
-      state.selectedId = state.features[2].id;
+      state.selectedId = state.features[0].id;
       saveHistory();
       syncUI();
       fitViewToFeatures();
@@ -2300,7 +2471,8 @@
       const feat = state.features.find(f => f.id === state.selectedId);
       if (!feat) return;
       feat.adminLevel = propAdminLevel.value;
-      if (feat.adminLevel === 'prefecture') feat.parentId = null;
+      if (feat.adminLevel === 'prefecture' && !feat.isEnclave) feat.parentId = null;
+      if (feat.adminLevel !== 'prefecture') feat.isEnclave = false;
       inheritHierarchyAttributes(feat);
       saveHistory();
       syncUI();
@@ -2312,7 +2484,9 @@
       if (!feat) return;
       feat.parentId = propParentId.value || null;
       inheritHierarchyAttributes(feat);
-      expandAncestorBoundariesWithNewChild(feat);
+      if (!feat.isEnclave) {
+        expandAncestorBoundariesWithNewChild(feat);
+      }
       saveHistory();
       syncUI();
       render();
@@ -2378,7 +2552,9 @@
       copy.name = `${copy.name}のコピー`;
       copy.vertices = copy.vertices.map(v => ({ x: v.x + 25, y: v.y + 25 }));
       state.features.push(copy);
-      expandAncestorBoundariesWithNewChild(copy);
+      if (!copy.isEnclave) {
+        expandAncestorBoundariesWithNewChild(copy);
+      }
       state.selectedId = copy.id;
       saveHistory();
       syncUI();
@@ -2673,7 +2849,7 @@
     initEvents();
     initPWA();
     state.features = createSampleFeatures();
-    state.selectedId = state.features[2].id;
+    state.selectedId = state.features[0].id;
     saveHistory();
     syncUI();
     resizeCanvas();
