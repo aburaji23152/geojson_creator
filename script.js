@@ -260,7 +260,7 @@
   const layerCount = document.getElementById('layer-count');
 
   // =========================================================================
-  // 4. ユーティリティ関数（座標変換・幾何演算・ポリゴン統合・飛び地制御）
+  // 4. ユーティリティ関数（座標変換・幾何演算・ポリゴン和集合・ポリゴン差分切り抜き）
   // =========================================================================
   function showToast(message, type = 'info') {
     const container = document.getElementById('toast-container');
@@ -282,7 +282,7 @@
     setTimeout(() => {
       toast.classList.add('opacity-0', 'translate-y-2');
       setTimeout(() => toast.remove(), 300);
-    }, 2800);
+    }, 3000);
   }
 
   function screenToWorld(sx, sy) {
@@ -358,7 +358,6 @@
     return false;
   }
 
-  // 2つのポリゴンが接触・交差・包含しているかを判定
   function doPolygonsTouchOrOverlap(polyA, polyB, eps = 3.0) {
     for (const v of polyA) {
       if (isPointOnBoundaryOrInside(v, polyB, eps)) return true;
@@ -429,7 +428,7 @@
   }
 
   // =========================================================================
-  // 4-B. 複数ポリゴンの外周輪郭統合（2D平面アレンジメント＋外周トレース）
+  // 4-B. 2Dポリゴンブール演算（和集合外周抽出 ＆ 差分切り抜き A - B）
   // =========================================================================
   function getSegmentIntersection(a, b, c, d) {
     const r = { x: b.x - a.x, y: b.y - a.y };
@@ -454,7 +453,7 @@
     if (t <= 1e-4 || t >= 1 - 1e-4) return null;
     const projX = a.x + t * dx;
     const projY = a.y + t * dy;
-    if (Math.hypot(p.x - projX, p.y - projY) <= 2.5) {
+    if (Math.hypot(p.x - projX, p.y - projY) <= 2.2) {
       return t;
     }
     return null;
@@ -467,10 +466,354 @@
       const p2 = verts[(i + 1) % verts.length];
       area += (p2.x - p1.x) * (p2.y + p1.y);
     }
+    // Y軸下向きスクリーン座標系では signedArea < 0 が時計回り
     if (area > 0) {
       return [...verts].reverse().map(v => ({ x: v.x, y: v.y }));
     }
     return verts.map(v => ({ x: v.x, y: v.y }));
+  }
+
+  function polygonSignedArea(verts) {
+    let area = 0;
+    for (let i = 0; i < verts.length; i++) {
+      const p1 = verts[i];
+      const p2 = verts[(i + 1) % verts.length];
+      area += (p2.x - p1.x) * (p2.y + p1.y);
+    }
+    return area * 0.5;
+  }
+
+  function removeCollinearVertices(verts) {
+    if (verts.length <= 3) return verts;
+    const result = [];
+    const n = verts.length;
+    for (let i = 0; i < n; i++) {
+      const prev = verts[(i - 1 + n) % n];
+      const curr = verts[i];
+      const next = verts[(i + 1) % n];
+      const cross = Math.abs((curr.x - prev.x) * (next.y - curr.y) - (curr.y - prev.y) * (next.x - curr.x));
+      const len1 = dist(prev, curr);
+      const len2 = dist(curr, next);
+      if (len1 > 0.5 && len2 > 0.5 && cross / (len1 * len2) > 0.01) {
+        result.push(curr);
+      }
+    }
+    return result.length >= 3 ? result : verts;
+  }
+
+  function traceClosedLoopsFromDirectedEdges(boundaryEdges) {
+    const loops = [];
+    for (let startIdx = 0; startIdx < boundaryEdges.length; startIdx++) {
+      if (boundaryEdges[startIdx].used) continue;
+
+      const loop = [];
+      let curr = boundaryEdges[startIdx];
+      curr.used = true;
+      loop.push({ x: curr.from.x, y: curr.from.y });
+
+      let safety = 0;
+      while (safety++ < 4000) {
+        if (dist(curr.to, loop[0]) < 1.0 && loop.length >= 3) {
+          break;
+        }
+        loop.push({ x: curr.to.x, y: curr.to.y });
+
+        const candidates = boundaryEdges.filter(be => !be.used && dist(be.from, curr.to) < 1.0);
+        if (candidates.length === 0) break;
+
+        let chosen = candidates[0];
+        if (candidates.length > 1) {
+          const inAngle = Math.atan2(curr.from.y - curr.to.y, curr.from.x - curr.to.x);
+          let bestTurn = Infinity;
+          for (const cand of candidates) {
+            const outAngle = Math.atan2(cand.to.y - cand.from.y, cand.to.x - cand.from.x);
+            let diff = outAngle - inAngle;
+            while (diff <= 0) diff += Math.PI * 2;
+            if (diff < bestTurn) {
+              bestTurn = diff;
+              chosen = cand;
+            }
+          }
+        }
+        chosen.used = true;
+        curr = chosen;
+      }
+
+      if (loop.length >= 3) {
+        const cleaned = removeCollinearVertices(loop);
+        if (Math.abs(polygonSignedArea(cleaned)) > 15) {
+          loops.push(cleaned);
+        }
+      }
+    }
+    return loops;
+  }
+
+  /**
+   * ポリゴン差分演算: subjectPoly から clipPoly（新しく描かれた市区町村）の重複部分を減らしたポリゴン配列を返す
+   * - 重なりがなければ [subjectPoly] をそのまま返す
+   * - 完全に覆われた場合は [] を返す
+   * - 一部が重なった場合は削られた残りのポリゴン（分断された場合は複数ポリゴン）を返す
+   */
+  function computePolygonDifference(subjectPoly, clipPoly) {
+    const subj = ensureClockwiseRing(subjectPoly);
+    const clip = ensureClockwiseRing(clipPoly);
+
+    // 1. 高速バウンディングボックス判定
+    let sMinX = Infinity, sMinY = Infinity, sMaxX = -Infinity, sMaxY = -Infinity;
+    for (const p of subj) {
+      if (p.x < sMinX) sMinX = p.x;
+      if (p.y < sMinY) sMinY = p.y;
+      if (p.x > sMaxX) sMaxX = p.x;
+      if (p.y > sMaxY) sMaxY = p.y;
+    }
+    let cMinX = Infinity, cMinY = Infinity, cMaxX = -Infinity, cMaxY = -Infinity;
+    for (const p of clip) {
+      if (p.x < cMinX) cMinX = p.x;
+      if (p.y < cMinY) cMinY = p.y;
+      if (p.x > cMaxX) cMaxX = p.x;
+      if (p.y > cMaxY) cMaxY = p.y;
+    }
+    if (sMaxX < cMinX - 2 || sMinX > cMaxX + 2 || sMaxY < cMinY - 2 || sMinY > cMaxY + 2) {
+      return [subj];
+    }
+
+    // 2. subject の辺と clip の辺をすべて交点・接触頂点で細分化
+    const subjEdges = [];
+    for (let i = 0; i < subj.length; i++) {
+      subjEdges.push({ a: { ...subj[i] }, b: { ...subj[(i + 1) % subj.length] } });
+    }
+    const clipEdges = [];
+    for (let i = 0; i < clip.length; i++) {
+      clipEdges.push({ a: { ...clip[i] }, b: { ...clip[(i + 1) % clip.length] } });
+    }
+
+    const subjSplits = subjEdges.map(() => [0, 1]);
+    const clipSplits = clipEdges.map(() => [0, 1]);
+
+    for (let i = 0; i < subjEdges.length; i++) {
+      const se = subjEdges[i];
+      for (const cv of clip) {
+        const t = pointOnSegmentParam(cv, se.a, se.b);
+        if (t !== null) subjSplits[i].push(t);
+      }
+      for (let j = 0; j < clipEdges.length; j++) {
+        const ce = clipEdges[j];
+        const hit = getSegmentIntersection(se.a, se.b, ce.a, ce.b);
+        if (hit) {
+          subjSplits[i].push(hit.t);
+          clipSplits[j].push(hit.u);
+        }
+      }
+    }
+
+    for (let j = 0; j < clipEdges.length; j++) {
+      const ce = clipEdges[j];
+      for (const sv of subj) {
+        const t = pointOnSegmentParam(sv, ce.a, ce.b);
+        if (t !== null) clipSplits[j].push(t);
+      }
+    }
+
+    const canonicalNodes = [];
+    function getCanonicalPoint(pt) {
+      for (const node of canonicalNodes) {
+        if (dist(node, pt) <= 2.0) return node;
+      }
+      const newNode = { x: Number(pt.x.toFixed(3)), y: Number(pt.y.toFixed(3)) };
+      canonicalNodes.push(newNode);
+      return newNode;
+    }
+
+    // 3. 差分 (subj - clip) の有向境界辺を抽出
+    // - subj の辺のうち、clip の内部（境界上を除く厳密な内部）に入っていない辺を順方向 (p0 -> p1) で採用
+    // - clip の辺のうち、subj の内部（境界上を除く厳密な内部）を通る辺を逆方向 (p1 -> p0) で採用（削り取られた新しい境界壁）
+    const diffEdges = [];
+    let hasClippedAnyPart = false;
+
+    for (let i = 0; i < subjEdges.length; i++) {
+      const se = subjEdges[i];
+      const ts = [...new Set(subjSplits[i].map(v => Number(v.toFixed(5))))].sort((x, y) => x - y);
+      for (let k = 0; k < ts.length - 1; k++) {
+        const t0 = ts[k], t1 = ts[k + 1];
+        if (t1 - t0 < 1e-4) continue;
+        const p0 = getCanonicalPoint({ x: se.a.x + (se.b.x - se.a.x) * t0, y: se.a.y + (se.b.y - se.a.y) * t0 });
+        const p1 = getCanonicalPoint({ x: se.a.x + (se.b.x - se.a.x) * t1, y: se.a.y + (se.b.y - se.a.y) * t1 });
+        if (dist(p0, p1) < 0.8) continue;
+
+        const mx = (p0.x + p1.x) / 2;
+        const my = (p0.y + p1.y) / 2;
+        const dx = p1.x - p0.x;
+        const dy = p1.y - p0.y;
+        const len = Math.hypot(dx, dy);
+
+        // subj 時計回り辺の内側法線（進行方向に対して右側: (-dy/len, dx/len)）に少し寄った点も確認
+        const testInnerPt = {
+          x: mx - (dy / len) * 1.2,
+          y: my + (dx / len) * 1.2
+        };
+
+        const midInsideClip = isPointInPolygon({ x: mx, y: my }, clip) && isPointInPolygon(testInnerPt, clip);
+        if (midInsideClip) {
+          hasClippedAnyPart = true;
+        } else {
+          // 境界が完全に一致している共有辺は clip に譲る（重なりをゼロにする）
+          const onClipEdge = isPointOnBoundaryOrInside({ x: mx, y: my }, clip, 1.0) && isPointInPolygon(testInnerPt, clip);
+          if (onClipEdge) {
+            hasClippedAnyPart = true;
+          } else {
+            diffEdges.push({ from: p0, to: p1, used: false });
+          }
+        }
+      }
+    }
+
+    for (let j = 0; j < clipEdges.length; j++) {
+      const ce = clipEdges[j];
+      const ts = [...new Set(clipSplits[j].map(v => Number(v.toFixed(5))))].sort((x, y) => x - y);
+      for (let k = 0; k < ts.length - 1; k++) {
+        const t0 = ts[k], t1 = ts[k + 1];
+        if (t1 - t0 < 1e-4) continue;
+        const p0 = getCanonicalPoint({ x: ce.a.x + (ce.b.x - ce.a.x) * t0, y: ce.a.y + (ce.b.y - ce.a.y) * t0 });
+        const p1 = getCanonicalPoint({ x: ce.a.x + (ce.b.x - ce.a.x) * t1, y: ce.a.y + (ce.b.y - ce.a.y) * t1 });
+        if (dist(p0, p1) < 0.8) continue;
+
+        const mx = (p0.x + p1.x) / 2;
+        const my = (p0.y + p1.y) / 2;
+        const dx = p1.x - p0.x;
+        const dy = p1.y - p0.y;
+        const len = Math.hypot(dx, dy);
+
+        // clip 時計回り辺の外側方向 (dy/len, -dx/len) が subj の厳密な内部にある場合、そこが削り口になる
+        const testOutsideClipPt = {
+          x: mx + (dy / len) * 1.2,
+          y: my - (dx / len) * 1.2
+        };
+
+        if (isPointInPolygon({ x: mx, y: my }, subj) && isPointInPolygon(testOutsideClipPt, subj)) {
+          hasClippedAnyPart = true;
+          // 逆向き (p1 -> p0) で追加することで時計回りの切り欠き輪郭を形成
+          diffEdges.push({ from: p1, to: p0, used: false });
+        }
+      }
+    }
+
+    if (!hasClippedAnyPart) {
+      return [subj];
+    }
+
+    if (diffEdges.length < 3) {
+      // 完全に飲み込まれた場合
+      return [];
+    }
+
+    // 4. 閉ループ構築（もし clip が subj のど真ん中にすっぽり入って穴が空いた場合はブリッジ辺で単一ポリゴン化）
+    const loops = traceClosedLoopsFromDirectedEdges(diffEdges);
+    if (loops.length === 0) {
+      return [];
+    }
+
+    // 穴（反時計回りループ: signedArea > 0）がある場合は外周（signedArea < 0）と最短頂点同士のスリットで接続し、単一ポリゴンとして保持
+    const outerLoops = loops.filter(l => polygonSignedArea(l) < 0);
+    const holeLoops = loops.filter(l => polygonSignedArea(l) > 0);
+
+    if (outerLoops.length >= 1 && holeLoops.length >= 1) {
+      let mainOuter = outerLoops.sort((a, b) => Math.abs(polygonSignedArea(b)) - Math.abs(polygonSignedArea(a)))[0];
+      for (const hole of holeLoops) {
+        let bestOuterIdx = 0;
+        let bestHoleIdx = 0;
+        let minD = Infinity;
+        for (let oi = 0; oi < mainOuter.length; oi++) {
+          for (let hi = 0; hi < hole.length; hi++) {
+            const d = dist(mainOuter[oi], hole[hi]);
+            if (d < minD) {
+              minD = d;
+              bestOuterIdx = oi;
+              bestHoleIdx = hi;
+            }
+          }
+        }
+        const reorderedHole = [];
+        for (let k = 0; k < hole.length; k++) {
+          reorderedHole.push(hole[(bestHoleIdx + k) % hole.length]);
+        }
+        const bridgeOuterPt = { x: mainOuter[bestOuterIdx].x, y: mainOuter[bestOuterIdx].y };
+        const bridgeHolePt = { x: reorderedHole[0].x, y: reorderedHole[0].y };
+        mainOuter = [
+          ...mainOuter.slice(0, bestOuterIdx + 1),
+          ...reorderedHole,
+          bridgeHolePt,
+          bridgeOuterPt,
+          ...mainOuter.slice(bestOuterIdx + 1)
+        ];
+      }
+      return [mainOuter, ...outerLoops.slice(1)];
+    }
+
+    return outerLoops.length > 0 ? outerLoops : loops;
+  }
+
+  /**
+   * 新しく追加された市区町村・行政区・郡（newFeat）と重なっている既存の同階層区画から、
+   * 重複した領域を自動的に差し引いて縮小・分割する
+   */
+  function clipOverlappingSiblingFeatures(newFeat) {
+    if (!newFeat || !newFeat.vertices || newFeat.vertices.length < 3) return [];
+    // 都道府県そのものを描いた場合は対象外（市区町村・郡の描画時に発動）
+    if (newFeat.adminLevel === 'prefecture') return [];
+
+    const affectedNames = [];
+    const updatedFeatures = [];
+
+    for (const existing of state.features) {
+      if (existing.id === newFeat.id) {
+        updatedFeatures.push(existing);
+        continue;
+      }
+
+      // 同じ階層レベル（市区町村同士、または郡・政令市同士）の重なりを減らす
+      const isSameTargetTier =
+        (newFeat.adminLevel === 'municipality' && existing.adminLevel === 'municipality') ||
+        (newFeat.adminLevel === 'group' && existing.adminLevel === 'group');
+
+      if (!isSameTargetTier || !existing.visible || !existing.vertices || existing.vertices.length < 3) {
+        updatedFeatures.push(existing);
+        continue;
+      }
+
+      const origArea = Math.abs(polygonSignedArea(existing.vertices));
+      const remainingPolys = computePolygonDifference(existing.vertices, newFeat.vertices);
+
+      if (remainingPolys.length === 0) {
+        // 新しい市区町村によって既存の市区町村が完全に置き換わった場合
+        affectedNames.push(`${existing.name}${existing.suffix}（統合・消滅）`);
+        continue;
+      }
+
+      const newTotalArea = remainingPolys.reduce((sum, p) => sum + Math.abs(polygonSignedArea(p)), 0);
+      if (newTotalArea < origArea * 0.995) {
+        // 面積が減った＝重なった部分が削られた
+        existing.vertices = remainingPolys[0];
+        updatedFeatures.push(existing);
+        affectedNames.push(`${existing.name}${existing.suffix}`);
+
+        // 分断されて2つ以上の飛び地ポリゴンに分かれた場合は残りも同自治体として追加
+        for (let k = 1; k < remainingPolys.length; k++) {
+          const splitCopy = cloneFeatures(existing);
+          splitCopy.id = `${existing.id}_split_${Date.now()}_${k}`;
+          splitCopy.vertices = remainingPolys[k];
+          updatedFeatures.push(splitCopy);
+        }
+      } else {
+        updatedFeatures.push(existing);
+      }
+    }
+
+    if (affectedNames.length > 0) {
+      state.features = updatedFeatures;
+    }
+
+    return affectedNames;
   }
 
   function computeConvexHull(points) {
@@ -599,53 +942,12 @@
       }
     }
 
-    const loops = [];
-    for (let startIdx = 0; startIdx < boundaryEdges.length; startIdx++) {
-      if (boundaryEdges[startIdx].used) continue;
-
-      const loop = [];
-      let curr = boundaryEdges[startIdx];
-      curr.used = true;
-      loop.push({ x: curr.from.x, y: curr.from.y });
-
-      let safety = 0;
-      while (safety++ < 3000) {
-        if (dist(curr.to, loop[0]) < 1.0 && loop.length >= 3) {
-          break;
-        }
-        loop.push({ x: curr.to.x, y: curr.to.y });
-
-        const candidates = boundaryEdges.filter(be => !be.used && dist(be.from, curr.to) < 1.0);
-        if (candidates.length === 0) break;
-
-        let chosen = candidates[0];
-        if (candidates.length > 1) {
-          const inAngle = Math.atan2(curr.from.y - curr.to.y, curr.from.x - curr.to.x);
-          let bestTurn = Infinity;
-          for (const cand of candidates) {
-            const outAngle = Math.atan2(cand.to.y - cand.from.y, cand.to.x - cand.from.x);
-            let diff = outAngle - inAngle;
-            while (diff <= 0) diff += Math.PI * 2;
-            if (diff < bestTurn) {
-              bestTurn = diff;
-              chosen = cand;
-            }
-          }
-        }
-        chosen.used = true;
-        curr = chosen;
-      }
-
-      if (loop.length >= 3) {
-        loops.push(loop);
-      }
-    }
-
+    const loops = traceClosedLoopsFromDirectedEdges(boundaryEdges);
     const originalArea = Math.abs(polygonSignedArea(validPolys[0]));
 
     if (loops.length > 0) {
       loops.sort((a, b) => Math.abs(polygonSignedArea(b)) - Math.abs(polygonSignedArea(a)));
-      const bestLoop = removeCollinearVertices(loops[0]);
+      const bestLoop = loops[0];
       const bestArea = Math.abs(polygonSignedArea(bestLoop));
 
       if (bestArea >= originalArea * 0.98) {
@@ -661,36 +963,6 @@
     return computeConvexHull(allPts);
   }
 
-  function polygonSignedArea(verts) {
-    let area = 0;
-    for (let i = 0; i < verts.length; i++) {
-      const p1 = verts[i];
-      const p2 = verts[(i + 1) % verts.length];
-      area += (p2.x - p1.x) * (p2.y + p1.y);
-    }
-    return area * 0.5;
-  }
-
-  function removeCollinearVertices(verts) {
-    if (verts.length <= 3) return verts;
-    const result = [];
-    const n = verts.length;
-    for (let i = 0; i < n; i++) {
-      const prev = verts[(i - 1 + n) % n];
-      const curr = verts[i];
-      const next = verts[(i + 1) % n];
-      const cross = Math.abs((curr.x - prev.x) * (next.y - curr.y) - (curr.y - prev.y) * (next.x - curr.x));
-      const len1 = dist(prev, curr);
-      const len2 = dist(curr, next);
-      if (len1 > 0.5 && len2 > 0.5 && cross / (len1 * len2) > 0.01) {
-        result.push(curr);
-      }
-    }
-    return result.length >= 3 ? result : verts;
-  }
-
-  // 新しく追加・変形された区画（childFeat）を含めて、親（郡・政令市）および祖父（県）の外周境界を自動拡張
-  // ※ 飛び地(isEnclave)の親同士や完全に離れた飛び地は本土と無理に合体させず、接触・内包側だけを拡張する
   function expandAncestorBoundariesWithNewChild(childFeat) {
     if (childFeat.isEnclave) return [];
 
@@ -718,8 +990,6 @@
     return expandedNames;
   }
 
-  // 指定した親区画（県・郡・政令市）の配下にある全子孫ポリゴンを親の境界範囲内に取り込む
-  // （完全に離れた飛び地子区画は本土と合体させず、親ポリゴンと接触・重なりがある子区画をすべて包含するように拡張）
   function fitParentBoundaryToEncloseChildren(parentFeat) {
     const collectDescendantFeatures = (pid) => {
       const directChildren = state.features.filter(f => f.parentId === pid && !f.isEnclave);
@@ -736,13 +1006,11 @@
       return { ok: false, reason: 'no_children' };
     }
 
-    // 飛び地（この県に紐づく別ポリゴン）が存在する場合は、それぞれの島・飛び地ごとに近い子区画だけをグループ化
     const enclavePeers = parentFeat.adminLevel === 'prefecture'
       ? state.features.filter(f => f.adminLevel === 'prefecture' && f.isEnclave && f.parentId === parentFeat.id)
       : [];
 
     if (enclavePeers.length > 0 && !parentFeat.isEnclave) {
-      // 本土側の子区画と、飛び地側の子区画を振り分けてそれぞれの境界を更新
       const mainlandChildren = [];
       const enclaveMap = new Map(enclavePeers.map(ep => [ep.id, []]));
 
@@ -773,7 +1041,6 @@
       return { ok: true, count: descendants.length, enclaveCount: enclavePeers.length };
     }
 
-    // 通常（単一エリアまたは飛び地単体を選択中）: 親の現在の外周と配下の全ポリゴンを統合して範囲内に収める
     const allPolys = [parentFeat.vertices, ...descendants.map(d => d.vertices)];
     const enclosedOuter = computeUnionOuterBoundary(allPolys, true);
     if (enclosedOuter && enclosedOuter.length >= 3) {
@@ -784,13 +1051,11 @@
     return { ok: false, reason: 'failed' };
   }
 
-  // 親階層（都道府県・郡・政令市）からN03属性（N03_001〜003）を自動継承する
   function inheritHierarchyAttributes(feat) {
     if (!feat.parentId) return;
     const parent = state.features.find(f => f.id === feat.parentId);
     if (!parent) return;
 
-    // 飛び地（同じ都道府県の独立エリア）の場合
     if (feat.adminLevel === 'prefecture' && feat.isEnclave) {
       feat.name = parent.name;
       feat.suffix = parent.suffix;
@@ -1602,7 +1867,7 @@
   }, { passive: false });
 
   // =========================================================================
-  // 9. 新規ポリゴン・飛び地・入れ子階層作成処理
+  // 9. 新規ポリゴン・飛び地・入れ子階層作成処理（重複部分の自動差し引き＋親境界拡張）
   // =========================================================================
   function startDrawingChildFeature(parentId, targetAdminLevel, isEnclave = false) {
     state.pendingParentId = parentId;
@@ -1626,7 +1891,7 @@
     if (isEnclave) {
       showToast('飛び地・離れ島のエリアを描画してください（本土と繋がらずそのエリアだけの大きさになります）');
     } else {
-      showToast('地図をクリックして境界を描画してください（はみ出した分は親の県・郡も自動拡張します）');
+      showToast('地図をクリックして境界を描画してください（既存市区町村と重なった部分は自動で差し引かれます）');
     }
   }
 
@@ -1675,7 +1940,6 @@
     let strokeColor = palette.stroke;
 
     if (isEnclave && parentFeat) {
-      // 飛び地エリアはそのエリアだけの大きさを持つ独立した同県ポリゴンとして作成
       defaultName = parentFeat.name;
       defaultSuffix = parentFeat.suffix;
       defaultCode = parentFeat.code;
@@ -1710,7 +1974,7 @@
       strokeColor,
       visible: true,
       expanded: true,
-      vertices
+      vertices: ensureClockwiseRing(vertices)
     };
 
     inheritHierarchyAttributes(newFeat);
@@ -1731,6 +1995,10 @@
       return;
     }
 
+    // 1. 県の内部などで既存の市区町村と重なった場合、既存市区町村から新しく描いた分を自動で減らす
+    const clippedNames = clipOverlappingSiblingFeatures(newFeat);
+
+    // 2. 県境・郡境より外側にはみ出して描かれた場合は親境界も自動拡張する
     const expandedAncestors = expandAncestorBoundariesWithNewChild(newFeat);
 
     state.selectedId = newFeat.id;
@@ -1738,8 +2006,16 @@
     syncUI();
     render();
 
+    const notes = [];
+    if (clippedNames.length > 0) {
+      notes.push(`重複した「${clippedNames.join('・')}」の領域を自動調整`);
+    }
     if (expandedAncestors.length > 0) {
-      showToast(`「${newFeat.name}${newFeat.suffix}」を追加し、${expandedAncestors.join('・')} の境界も自動更新しました`, 'success');
+      notes.push(`${expandedAncestors.join('・')} の境界を拡張`);
+    }
+
+    if (notes.length > 0) {
+      showToast(`「${newFeat.name}${newFeat.suffix}」を追加し、${notes.join('・')}しました`, 'success');
     } else {
       showToast(`「${newFeat.name}${newFeat.suffix}」を作成しました`, 'success');
     }
@@ -1911,7 +2187,6 @@
       propFillColor.value = selectedFeat.fillColor;
       propStrokeColor.value = selectedFeat.strokeColor;
 
-      // 県・郡の設定パネル内に「飛び地設定」および「配下の市区町村・郡を範囲内に入れる」ボタンを構築
       childCreatorBar.innerHTML = '';
       if (selectedFeat.adminLevel === 'prefecture') {
         const mainPrefId = selectedFeat.isEnclave ? (selectedFeat.parentId || selectedFeat.id) : selectedFeat.id;
