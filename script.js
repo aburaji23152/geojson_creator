@@ -2,7 +2,7 @@
   'use strict';
 
   // =========================================================================
-  // 1. 定数・カラーパレット・初期サンプルデータ定義
+  // 1. 定数・カラーパレット・入れ子構造サンプルデータ定義
   // =========================================================================
   const COLOR_PALETTE = [
     { fill: '#3b82f6', stroke: '#1d4ed8', label: 'ブルー' },
@@ -17,8 +17,9 @@
     { fill: '#64748b', stroke: '#334155', label: 'スレート' }
   ];
 
-  // 国土数値情報(N03)準拠のプロパティを持つ架空の「蒼海県」サンプル
+  // 国土数値情報(N03)準拠・3階層入れ子構造（県 ＞ 郡・政令市 ＞ 市区町村・区）のサンプル
   function createSampleFeatures() {
+    // 県境の外周頂点（子区画と座標を完全共有）
     const pNW = { x: -240, y: -170 };
     const pN1 = { x: -70, y: -195 };
     const pN2 = { x: 95, y: -180 };
@@ -29,56 +30,56 @@
     const pSW = { x: -155, y: 165 };
     const pW1 = { x: -260, y: 15 };
 
+    // 内部境界頂点
     const c1 = { x: -55, y: -35 };
     const c2 = { x: 75, y: -25 };
     const c3 = { x: 20, y: 75 };
     const c4 = { x: -110, y: 55 };
 
     return [
+      // 第1階層：都道府県
       {
         id: 'feat_pref_1',
+        parentId: null,
         name: '蒼海',
         suffix: '県',
         adminLevel: 'prefecture',
-        prefecture: '蒼海県', // N03_001
-        subpref: '',          // N03_002
-        county: '',           // N03_003
-        code: '99000',        // N03_007
-        fillColor: '#3b82f6',
-        strokeColor: '#1e3a8a',
-        visible: true,
-        vertices: [pNW, pN1, pN2, pNE, pE1, pSE, pS1, pSW, pW1]
-      },
-      {
-        id: 'feat_muni_1',
-        name: '北嶺',
-        suffix: '町',
-        adminLevel: 'municipality',
-        prefecture: '蒼海県',
-        subpref: '',
-        county: '北嶺郡',
-        code: '99301',
-        fillColor: '#10b981',
-        strokeColor: '#065f46',
-        visible: true,
-        vertices: [pNW, pN1, pN2, c2, c1, pW1]
-      },
-      {
-        id: 'feat_muni_2',
-        name: '東雲',
-        suffix: '市',
-        adminLevel: 'municipality',
         prefecture: '蒼海県',
         subpref: '',
         county: '',
-        code: '99201',
-        fillColor: '#f59e0b',
-        strokeColor: '#92400e',
+        code: '99000',
+        fillColor: '#3b82f6',
+        strokeColor: '#1e3a8a',
         visible: true,
-        vertices: [pN2, pNE, pE1, pSE, c3, c2]
+        expanded: true,
+        vertices: [
+          { ...pNW }, { ...pN1 }, { ...pN2 }, { ...pNE },
+          { ...pE1 }, { ...pSE }, { ...pS1 }, { ...pSW }, { ...pW1 }
+        ]
       },
+      // 第2階層：政令指定都市（蒼海市）
+      {
+        id: 'feat_grp_city',
+        parentId: 'feat_pref_1',
+        name: '蒼海',
+        suffix: '市',
+        adminLevel: 'group',
+        prefecture: '蒼海県',
+        subpref: '',
+        county: '蒼海市',
+        code: '99100',
+        fillColor: '#6366f1',
+        strokeColor: '#3730a3',
+        visible: true,
+        expanded: true,
+        vertices: [
+          { ...pW1 }, { ...c1 }, { ...c2 }, { ...c3 }, { ...pS1 }, { ...pSW }
+        ]
+      },
+      // 第3階層：政令市の行政区（中央区）
       {
         id: 'feat_muni_3',
+        parentId: 'feat_grp_city',
         name: '中央',
         suffix: '区',
         adminLevel: 'municipality',
@@ -89,10 +90,15 @@
         fillColor: '#ef4444',
         strokeColor: '#991b1b',
         visible: true,
-        vertices: [c1, c2, c3, pS1, pSW, c4]
+        expanded: true,
+        vertices: [
+          { ...c1 }, { ...c2 }, { ...c3 }, { ...pS1 }, { ...pSW }, { ...c4 }
+        ]
       },
+      // 第3階層：政令市の行政区（西湊区）
       {
         id: 'feat_muni_4',
+        parentId: 'feat_grp_city',
         name: '西湊',
         suffix: '区',
         adminLevel: 'municipality',
@@ -103,7 +109,67 @@
         fillColor: '#8b5cf6',
         strokeColor: '#5b21b6',
         visible: true,
-        vertices: [pW1, c1, c4, pSW]
+        expanded: true,
+        vertices: [
+          { ...pW1 }, { ...c1 }, { ...c4 }, { ...pSW }
+        ]
+      },
+      // 第2階層：郡（北嶺郡）
+      {
+        id: 'feat_grp_gun',
+        parentId: 'feat_pref_1',
+        name: '北嶺',
+        suffix: '郡',
+        adminLevel: 'group',
+        prefecture: '蒼海県',
+        subpref: '',
+        county: '北嶺郡',
+        code: '99300',
+        fillColor: '#059669',
+        strokeColor: '#064e3b',
+        visible: true,
+        expanded: true,
+        vertices: [
+          { ...pNW }, { ...pN1 }, { ...pN2 }, { ...c2 }, { ...c1 }, { ...pW1 }
+        ]
+      },
+      // 第3階層：郡配下の町（北嶺町）
+      {
+        id: 'feat_muni_1',
+        parentId: 'feat_grp_gun',
+        name: '北嶺',
+        suffix: '町',
+        adminLevel: 'municipality',
+        prefecture: '蒼海県',
+        subpref: '',
+        county: '北嶺郡',
+        code: '99301',
+        fillColor: '#10b981',
+        strokeColor: '#065f46',
+        visible: true,
+        expanded: true,
+        vertices: [
+          { ...pNW }, { ...pN1 }, { ...pN2 }, { ...c2 }, { ...c1 }, { ...pW1 }
+        ]
+      },
+      // 第3階層：県直下の一般市（東雲市）
+      {
+        id: 'feat_muni_2',
+        parentId: 'feat_pref_1',
+        name: '東雲',
+        suffix: '市',
+        adminLevel: 'municipality',
+        prefecture: '蒼海県',
+        subpref: '',
+        county: '',
+        code: '99201',
+        fillColor: '#f59e0b',
+        strokeColor: '#92400e',
+        visible: true,
+        expanded: true,
+        vertices: [
+          { ...pN2 }, { ...pNE }, { ...pE1 }, { ...pSE }, { ...c3 }, { ...c2 }
+        ]
       }
     ];
   }
@@ -114,8 +180,11 @@
   const state = {
     features: [],
     selectedId: null,
+    pendingParentId: null, // 「＋配下を追加」から描画を開始する際の親ID
+    pendingAdminLevel: null,
     tool: 'select',
     snapEnabled: true,
+    topologySyncEnabled: true, // 県境・郡境・隣接境界の自動追従フラグ
     showGrid: true,
 
     camera: {
@@ -150,6 +219,7 @@
     dragStartScreen: { x: 0, y: 0 },
     dragStartCamera: { x: 0, y: 0 },
     dragTargetVertexIndex: -1,
+    dragLinkedVertices: [], // 同時に連動して動く共有頂点リスト [{ featureId, vertexIndex }]
     dragStartFeatureVertices: null,
     isSpacePressed: false,
 
@@ -168,13 +238,17 @@
   const statusZoom = document.getElementById('status-zoom');
   const statusHint = document.getElementById('status-hint');
   const statusSnapBadge = document.getElementById('status-snap-badge');
+  const statusTopologyBadge = document.getElementById('status-topology-badge');
   const drawingToolbar = document.getElementById('drawing-toolbar');
+  const drawingTargetLabel = document.getElementById('drawing-target-label');
   const drawingVertexCount = document.getElementById('drawing-vertex-count');
 
   const rightPanel = document.getElementById('right-panel');
   const propEmptyState = document.getElementById('prop-empty-state');
   const propForm = document.getElementById('prop-form');
   const propAdminLevel = document.getElementById('prop-admin-level');
+  const parentSelectorWrapper = document.getElementById('parent-selector-wrapper');
+  const propParentId = document.getElementById('prop-parent-id');
   const propName = document.getElementById('prop-name');
   const propSuffix = document.getElementById('prop-suffix');
   const propPrefecture = document.getElementById('prop-prefecture');
@@ -183,11 +257,12 @@
   const propCode = document.getElementById('prop-code');
   const propFillColor = document.getElementById('prop-fill-color');
   const propStrokeColor = document.getElementById('prop-stroke-color');
+  const childCreatorBar = document.getElementById('child-creator-bar');
   const layerList = document.getElementById('layer-list');
   const layerCount = document.getElementById('layer-count');
 
   // =========================================================================
-  // 4. ユーティリティ関数（座標変換・幾何演算・通知）
+  // 4. ユーティリティ関数（座標変換・幾何演算・入れ子階層解決）
   // =========================================================================
   function showToast(message, type = 'info') {
     const container = document.getElementById('toast-container');
@@ -254,6 +329,17 @@
     return Math.hypot(p1.x - p2.x, p1.y - p2.y);
   }
 
+  function pointToSegmentDist(p, a, b) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) return { distance: dist(p, a), t: 0 };
+    let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    const proj = { x: a.x + t * dx, y: a.y + t * dy };
+    return { distance: dist(p, proj), t };
+  }
+
   function isPointInPolygon(pt, vertices) {
     let inside = false;
     for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i++) {
@@ -316,6 +402,32 @@
     return Math.abs(dy * pt.x - dx * pt.y + lineEnd.x * lineStart.y - lineEnd.y * lineStart.x) / mag;
   }
 
+  // 親階層（都道府県・郡・政令市）からN03属性（N03_001〜003）を自動継承する
+  function inheritHierarchyAttributes(feat) {
+    if (!feat.parentId) return;
+    const parent = state.features.find(f => f.id === feat.parentId);
+    if (!parent) return;
+
+    if (parent.adminLevel === 'prefecture') {
+      feat.prefecture = `${parent.name}${parent.suffix}`;
+      if (feat.adminLevel === 'group') {
+        if (parent.suffix === '道' && (feat.suffix === '振興局' || feat.suffix === '支庁')) {
+          feat.subpref = `${feat.name}${feat.suffix}`;
+        } else {
+          feat.county = `${feat.name}${feat.suffix}`;
+        }
+      }
+    } else if (parent.adminLevel === 'group') {
+      const grandParent = state.features.find(f => f.id === parent.parentId);
+      feat.prefecture = grandParent ? `${grandParent.name}${grandParent.suffix}` : (parent.prefecture || feat.prefecture);
+      if (parent.suffix === '振興局' || parent.suffix === '支庁') {
+        feat.subpref = `${parent.name}${parent.suffix}`;
+      } else {
+        feat.county = `${parent.name}${parent.suffix}`;
+      }
+    }
+  }
+
   // =========================================================================
   // 5. Undo / Redo 履歴管理
   // =========================================================================
@@ -365,7 +477,7 @@
   }
 
   // =========================================================================
-  // 6. スナップ（頂点吸着）検出ロジック
+  // 6. スナップ & 共有境界（県境・郡境・隣接境界）トポロジー連動検出
   // =========================================================================
   function findSnapTarget(screenPt, excludeFeatureId = null, excludeVertexIndex = -1) {
     if (!state.snapEnabled) return null;
@@ -377,6 +489,10 @@
       if (!feat.visible) continue;
       for (let i = 0; i < feat.vertices.length; i++) {
         if (feat.id === excludeFeatureId && i === excludeVertexIndex) continue;
+        // 連動ドラッグ中の頂点自身にはスナップしない
+        if (state.dragLinkedVertices.some(lv => lv.featureId === feat.id && lv.vertexIndex === i)) {
+          continue;
+        }
         const v = feat.vertices[i];
         const vs = worldToScreen(v.x, v.y);
         const d = dist(screenPt, vs);
@@ -394,8 +510,66 @@
     return bestTarget;
   }
 
+  // 指定座標と一致（または極近接）する他ポリゴンの頂点をすべて収集（県境・郡境連動用）
+  function collectSharedVertices(worldPt, sourceFeatureId, sourceVertexIndex) {
+    if (!state.topologySyncEnabled) return [];
+    const TOLERANCE_WORLD = 1.5;
+    const linked = [];
+
+    for (const feat of state.features) {
+      for (let i = 0; i < feat.vertices.length; i++) {
+        if (feat.id === sourceFeatureId && i === sourceVertexIndex) continue;
+        if (dist(feat.vertices[i], worldPt) <= TOLERANCE_WORLD) {
+          linked.push({
+            featureId: feat.id,
+            vertexIndex: i
+          });
+        }
+      }
+    }
+    return linked;
+  }
+
+  // 辺の中点に頂点を挿入した際、同じ辺（共有県境・郡境）を持つ他ポリゴンにも同時に頂点を挿入
+  function insertSharedEdgeMidpoint(v1, v2, newMidPt, sourceFeatureId) {
+    if (!state.topologySyncEnabled) return;
+    const TOLERANCE_WORLD = 1.5;
+
+    for (const feat of state.features) {
+      if (feat.id === sourceFeatureId) continue;
+      const verts = feat.vertices;
+      for (let i = 0; i < verts.length; i++) {
+        const a = verts[i];
+        const b = verts[(i + 1) % verts.length];
+        const sameForward = dist(a, v1) <= TOLERANCE_WORLD && dist(b, v2) <= TOLERANCE_WORLD;
+        const sameReverse = dist(a, v2) <= TOLERANCE_WORLD && dist(b, v1) <= TOLERANCE_WORLD;
+        if (sameForward || sameReverse) {
+          verts.splice(i + 1, 0, { x: newMidPt.x, y: newMidPt.y });
+          break;
+        }
+      }
+    }
+  }
+
+  // 頂点を削除した際、同じ座標を共有している他ポリゴン（県境・郡境）の頂点も同時に削除
+  function deleteSharedVertices(worldPt, sourceFeatureId) {
+    if (!state.topologySyncEnabled) return;
+    const TOLERANCE_WORLD = 1.5;
+
+    for (const feat of state.features) {
+      if (feat.id === sourceFeatureId) continue;
+      if (feat.vertices.length <= 3) continue;
+      for (let i = feat.vertices.length - 1; i >= 0; i--) {
+        if (feat.vertices.length <= 3) break;
+        if (dist(feat.vertices[i], worldPt) <= TOLERANCE_WORLD) {
+          feat.vertices.splice(i, 1);
+        }
+      }
+    }
+  }
+
   // =========================================================================
-  // 7. キャンバス描画エンジン
+  // 7. キャンバス描画エンジン（階層ごとの描画順・境界線スタイル差別化）
   // =========================================================================
   function resizeCanvas() {
     const rect = canvasContainer.getBoundingClientRect();
@@ -423,12 +597,19 @@
       drawUnderlayImage();
     }
 
-    for (const feat of state.features) {
+    // 描画順序: 第1階層(都道府県) → 第2階層(郡・政令市) → 第3階層(市区町村・区) の順に重ねる
+    const levelOrder = { prefecture: 1, group: 2, municipality: 3, island: 3 };
+    const sortedFeatures = [...state.features].sort((a, b) => {
+      return (levelOrder[a.adminLevel] || 3) - (levelOrder[b.adminLevel] || 3);
+    });
+
+    for (const feat of sortedFeatures) {
       if (!feat.visible || feat.vertices.length < 3) continue;
       const isSelected = feat.id === state.selectedId;
       drawFeaturePolygon(feat, isSelected, isDark);
     }
 
+    // 選択中ポリゴンの頂点・中点ハンドル（連動する共有頂点もハイライト）
     if (state.tool === 'select' && state.selectedId) {
       const selectedFeat = state.features.find(f => f.id === state.selectedId);
       if (selectedFeat && selectedFeat.visible) {
@@ -534,22 +715,32 @@
     }
     ctx.closePath();
 
-    const fillAlpha = feat.adminLevel === 'prefecture'
-      ? (isSelected ? 0.22 : 0.12)
-      : (isSelected ? 0.42 : 0.28);
+    // 階層ごとに塗りの透明度を調整（上位階層は薄くして下位の市区町村を見やすくする）
+    let fillAlpha = 0.32;
+    if (feat.adminLevel === 'prefecture') {
+      fillAlpha = isSelected ? 0.16 : 0.07;
+    } else if (feat.adminLevel === 'group') {
+      fillAlpha = isSelected ? 0.22 : 0.11;
+    } else {
+      fillAlpha = isSelected ? 0.44 : 0.30;
+    }
 
     ctx.fillStyle = hexToRgba(feat.fillColor, fillAlpha);
     ctx.fill();
 
+    // 階層ごとに境界線スタイルを差別化（県境＝太い破線、郡・政令市境＝一点鎖線、市区町村境＝実線）
     ctx.strokeStyle = isSelected ? '#2563eb' : feat.strokeColor;
     if (feat.adminLevel === 'prefecture') {
       ctx.lineWidth = isSelected ? 4.5 : 3.5;
-      ctx.setLineDash([10, 4]);
+      ctx.setLineDash([12, 5]);
+    } else if (feat.adminLevel === 'group') {
+      ctx.lineWidth = isSelected ? 3.5 : 2.6;
+      ctx.setLineDash([10, 3, 2, 3]);
     } else if (feat.adminLevel === 'island') {
       ctx.lineWidth = isSelected ? 3 : 2;
       ctx.setLineDash([4, 4]);
     } else {
-      ctx.lineWidth = isSelected ? 3 : 1.8;
+      ctx.lineWidth = isSelected ? 2.8 : 1.6;
       ctx.setLineDash([]);
     }
     ctx.lineJoin = 'round';
@@ -557,30 +748,43 @@
     ctx.setLineDash([]);
 
     if (isSelected) {
-      ctx.strokeStyle = 'rgba(59, 130, 246, 0.35)';
-      ctx.lineWidth = 8;
+      ctx.strokeStyle = 'rgba(59, 130, 246, 0.32)';
+      ctx.lineWidth = 7;
       ctx.stroke();
     }
 
+    // ラベル表示（都道府県・郡・政令市は重ならないよう少し上方にオフセット）
     const fullName = `${feat.name}${feat.suffix}`;
     if (fullName.trim() !== '') {
       const centroidWorld = getPolygonCentroid(feat.vertices);
       const centerScreen = worldToScreen(centroidWorld.x, centroidWorld.y);
 
-      const fontSize = feat.adminLevel === 'prefecture'
-        ? Math.max(12, Math.min(20, 15 * Math.sqrt(state.camera.zoom)))
-        : Math.max(10, Math.min(15, 12 * Math.sqrt(state.camera.zoom)));
+      let offsetY = 0;
+      let fontSize = 12 * Math.sqrt(state.camera.zoom);
+      if (feat.adminLevel === 'prefecture') {
+        offsetY = -22;
+        fontSize = Math.max(13, Math.min(22, 16 * Math.sqrt(state.camera.zoom)));
+      } else if (feat.adminLevel === 'group') {
+        offsetY = -12;
+        fontSize = Math.max(11, Math.min(18, 13.5 * Math.sqrt(state.camera.zoom)));
+      } else {
+        fontSize = Math.max(10, Math.min(15, 11.5 * Math.sqrt(state.camera.zoom)));
+      }
 
-      ctx.font = `${feat.adminLevel === 'prefecture' ? '700' : '600'} ${Math.round(fontSize)}px "Noto Sans JP", sans-serif`;
+      ctx.font = `${feat.adminLevel !== 'municipality' ? '700' : '600'} ${Math.round(fontSize)}px "Noto Sans JP", sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
 
       ctx.lineWidth = 3.5;
-      ctx.strokeStyle = isDark ? 'rgba(15, 23, 42, 0.85)' : 'rgba(255, 255, 255, 0.9)';
-      ctx.strokeText(fullName, centerScreen.x, centerScreen.y);
+      ctx.strokeStyle = isDark ? 'rgba(15, 23, 42, 0.88)' : 'rgba(255, 255, 255, 0.92)';
+      ctx.strokeText(fullName, centerScreen.x, centerScreen.y + offsetY);
 
-      ctx.fillStyle = isDark ? '#f1f5f9' : '#0f172a';
-      ctx.fillText(fullName, centerScreen.x, centerScreen.y);
+      ctx.fillStyle = feat.adminLevel === 'prefecture'
+        ? (isDark ? '#93c5fd' : '#1e3a8a')
+        : feat.adminLevel === 'group'
+        ? (isDark ? '#c4b5fd' : '#3730a3')
+        : (isDark ? '#f1f5f9' : '#0f172a');
+      ctx.fillText(fullName, centerScreen.x, centerScreen.y + offsetY);
     }
 
     ctx.restore();
@@ -590,6 +794,7 @@
     const verts = feat.vertices;
     ctx.save();
 
+    // 辺の中点ハンドル
     for (let i = 0; i < verts.length; i++) {
       const v1 = verts[i];
       const v2 = verts[(i + 1) % verts.length];
@@ -609,13 +814,24 @@
       ctx.stroke();
     }
 
+    // 頂点ハンドル（県境・郡境などと共有している頂点は二重リングで表示）
     for (let i = 0; i < verts.length; i++) {
       const sp = worldToScreen(verts[i].x, verts[i].y);
       const isHovered = state.hoveredVertex && state.hoveredVertex.vertexIndex === i;
+      const sharedList = collectSharedVertices(verts[i], feat.id, i);
+      const isShared = sharedList.length > 0;
       const size = isHovered ? 11 : 8;
 
-      ctx.fillStyle = isHovered ? '#f59e0b' : '#ffffff';
-      ctx.strokeStyle = '#1d4ed8';
+      if (isShared && state.topologySyncEnabled) {
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, 9, 0, Math.PI * 2);
+        ctx.strokeStyle = '#6366f1';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+
+      ctx.fillStyle = isHovered ? '#f59e0b' : (isShared ? '#eef2ff' : '#ffffff');
+      ctx.strokeStyle = isShared ? '#4f46e5' : '#1d4ed8';
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.rect(sp.x - size / 2, sp.y - size / 2, size, size);
@@ -736,15 +952,18 @@
     const selectedFeat = state.features.find(f => f.id === state.selectedId);
 
     if (selectedFeat && selectedFeat.visible) {
+      // 1. 頂点ハンドルのドラッグ判定（県境・郡境・隣接境界の共有頂点も収集）
       for (let i = 0; i < selectedFeat.vertices.length; i++) {
         const vs = worldToScreen(selectedFeat.vertices[i].x, selectedFeat.vertices[i].y);
         if (dist(screenPt, vs) <= 10) {
           state.dragMode = 'vertex';
           state.dragTargetVertexIndex = i;
+          state.dragLinkedVertices = collectSharedVertices(selectedFeat.vertices[i], selectedFeat.id, i);
           return;
         }
       }
 
+      // 2. 辺の中点ハンドルからの新規頂点追加（共有境界にも同時挿入）
       for (let i = 0; i < selectedFeat.vertices.length; i++) {
         const v1 = selectedFeat.vertices[i];
         const v2 = selectedFeat.vertices[(i + 1) % selectedFeat.vertices.length];
@@ -752,22 +971,22 @@
         const midScreen = worldToScreen(midWorld.x, midWorld.y);
         if (dist(screenPt, midScreen) <= 9) {
           selectedFeat.vertices.splice(i + 1, 0, midWorld);
+          insertSharedEdgeMidpoint(v1, v2, midWorld, selectedFeat.id);
+
           state.dragMode = 'vertex';
           state.dragTargetVertexIndex = i + 1;
+          state.dragLinkedVertices = collectSharedVertices(midWorld, selectedFeat.id, i + 1);
           render();
           return;
         }
       }
     }
 
-    const hitCandidates = [];
-    for (let i = state.features.length - 1; i >= 0; i--) {
-      const feat = state.features[i];
-      if (!feat.visible || feat.vertices.length < 3) continue;
-      if (isPointInPolygon(state.mouseWorld, feat.vertices)) {
-        hitCandidates.push(feat);
-      }
-    }
+    // 3. ポリゴンのクリック選択（重なっている場合は下位階層＝市区町村を優先し、再クリックで親階層へ循環）
+    const levelPriority = { municipality: 3, island: 3, group: 2, prefecture: 1 };
+    const hitCandidates = state.features
+      .filter(feat => feat.visible && feat.vertices.length >= 3 && isPointInPolygon(state.mouseWorld, feat.vertices))
+      .sort((a, b) => (levelPriority[b.adminLevel] || 0) - (levelPriority[a.adminLevel] || 0));
 
     if (hitCandidates.length > 0) {
       let nextSelected = hitCandidates[0];
@@ -841,13 +1060,23 @@
       return;
     }
 
+    // 頂点ドラッグ移動（共有している県境・郡境・隣接境界の頂点も同時に移動）
     if (state.dragMode === 'vertex' && state.selectedId) {
       const feat = state.features.find(f => f.id === state.selectedId);
       if (feat) {
         const snap = findSnapTarget(screenPt, feat.id, state.dragTargetVertexIndex);
         state.snapTarget = snap;
         const pos = snap ? { x: snap.x, y: snap.y } : { ...state.mouseWorld };
-        feat.vertices[state.dragTargetVertexIndex] = pos;
+        feat.vertices[state.dragTargetVertexIndex] = { ...pos };
+
+        if (state.topologySyncEnabled && state.dragLinkedVertices.length > 0) {
+          for (const linked of state.dragLinkedVertices) {
+            const targetFeat = state.features.find(f => f.id === linked.featureId);
+            if (targetFeat && targetFeat.vertices[linked.vertexIndex]) {
+              targetFeat.vertices[linked.vertexIndex] = { ...pos };
+            }
+          }
+        }
         render();
       }
       return;
@@ -923,6 +1152,7 @@
     }
     state.dragMode = null;
     state.dragTargetVertexIndex = -1;
+    state.dragLinkedVertices = [];
     state.dragStartFeatureVertices = null;
     state.snapTarget = null;
 
@@ -934,6 +1164,7 @@
     render();
   }
 
+  // 右クリックで頂点削除（共有している県境・郡境の頂点も連動削除）
   canvas.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     if (state.tool !== 'select' || !state.selectedId) return;
@@ -948,11 +1179,13 @@
           showToast('ポリゴンには最低3つの頂点が必要です', 'error');
           return;
         }
+        const removedPt = { ...selectedFeat.vertices[i] };
         selectedFeat.vertices.splice(i, 1);
+        deleteSharedVertices(removedPt, selectedFeat.id);
         state.hoveredVertex = null;
         saveHistory();
         render();
-        showToast('頂点を削除しました');
+        showToast('頂点（および共有境界頂点）を削除しました');
         return;
       }
     }
@@ -985,28 +1218,102 @@
   }, { passive: false });
 
   // =========================================================================
-  // 9. 新規ポリゴン・フリーハンド完了処理
+  // 9. 新規ポリゴン・入れ子階層作成処理
   // =========================================================================
+  function startDrawingChildFeature(parentId, targetAdminLevel) {
+    state.pendingParentId = parentId;
+    state.pendingAdminLevel = targetAdminLevel;
+    const parent = state.features.find(f => f.id === parentId);
+    const levelLabel = targetAdminLevel === 'prefecture'
+      ? '都道府県'
+      : targetAdminLevel === 'group'
+      ? '郡・政令市'
+      : '市区町村・区';
+
+    drawingTargetLabel.textContent = parent
+      ? `「${parent.name}${parent.suffix}」配下の${levelLabel}`
+      : `新規${levelLabel}`;
+
+    setTool('polygon');
+    showToast(`地図をクリックして境界を描画してください（Enterで確定）`);
+  }
+
   function createNewFeatureFromVertices(vertices) {
     const idx = state.features.length + 1;
     const palette = COLOR_PALETTE[(idx - 1) % COLOR_PALETTE.length];
-    const hasPref = state.features.some(f => f.adminLevel === 'prefecture');
-    const defaultPref = state.features.find(f => f.adminLevel === 'prefecture');
+
+    let parentId = state.pendingParentId;
+    let adminLevel = state.pendingAdminLevel;
+
+    // 通常の描画ボタンから描いた場合は、現在選択中の地物の階層から適切な親を自動推測
+    if (!adminLevel) {
+      const currentSelected = state.features.find(f => f.id === state.selectedId);
+      if (currentSelected) {
+        if (currentSelected.adminLevel === 'prefecture') {
+          parentId = currentSelected.id;
+          adminLevel = 'municipality';
+        } else if (currentSelected.adminLevel === 'group') {
+          parentId = currentSelected.id;
+          adminLevel = 'municipality';
+        } else {
+          parentId = currentSelected.parentId;
+          adminLevel = 'municipality';
+        }
+      } else {
+        const rootPref = state.features.find(f => f.adminLevel === 'prefecture');
+        if (rootPref) {
+          parentId = rootPref.id;
+          adminLevel = 'municipality';
+        } else {
+          parentId = null;
+          adminLevel = 'prefecture';
+        }
+      }
+    }
+
+    const parentFeat = parentId ? state.features.find(f => f.id === parentId) : null;
+    if (parentFeat) {
+      parentFeat.expanded = true;
+    }
+
+    let defaultName = `新規第${idx}`;
+    let defaultSuffix = '市';
+    if (adminLevel === 'prefecture') {
+      defaultName = '新規';
+      defaultSuffix = '県';
+    } else if (adminLevel === 'group') {
+      defaultName = '新規';
+      defaultSuffix = '郡';
+    } else if (parentFeat && parentFeat.suffix === '市') {
+      defaultName = `第${idx}`;
+      defaultSuffix = '区';
+    } else if (parentFeat && parentFeat.suffix === '郡') {
+      defaultName = `新設`;
+      defaultSuffix = '町';
+    }
 
     const newFeat = {
       id: `feat_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-      name: hasPref ? `新設第${idx}` : '新規',
-      suffix: hasPref ? '市' : '県',
-      adminLevel: hasPref ? 'municipality' : 'prefecture',
-      prefecture: defaultPref ? `${defaultPref.name}${defaultPref.suffix}` : '新規県',
+      parentId: parentId || null,
+      name: defaultName,
+      suffix: defaultSuffix,
+      adminLevel,
+      prefecture: '',
       subpref: '',
       county: '',
-      code: hasPref ? `99${String(200 + idx).padStart(3, '0')}` : '99000',
+      code: adminLevel === 'prefecture' ? '99000' : `99${String(200 + idx).padStart(3, '0')}`,
       fillColor: palette.fill,
       strokeColor: palette.stroke,
       visible: true,
+      expanded: true,
       vertices
     };
+
+    inheritHierarchyAttributes(newFeat);
+
+    state.pendingParentId = null;
+    state.pendingAdminLevel = null;
+    drawingTargetLabel.textContent = '新規ポリゴン';
 
     state.features.push(newFeat);
     state.selectedId = newFeat.id;
@@ -1030,6 +1337,9 @@
 
   function cancelPolygonDrawing() {
     state.drawingVertices = [];
+    state.pendingParentId = null;
+    state.pendingAdminLevel = null;
+    drawingTargetLabel.textContent = '新規ポリゴン';
     updateDrawingToolbar();
     render();
   }
@@ -1074,7 +1384,7 @@
   }
 
   // =========================================================================
-  // 10. ツール切替・カメラフィット・UI同期
+  // 10. ツール切替・カメラフィット・入れ子ツリーUI同期
   // =========================================================================
   function setTool(toolName) {
     if (state.tool === 'polygon' && toolName !== 'polygon') {
@@ -1089,7 +1399,7 @@
     });
 
     const hints = {
-      select: 'クリックで選択、頂点ドラッグで編集、辺の中点ドラッグで頂点追加、右クリックで頂点削除',
+      select: 'クリックで選択、県境・郡境の共有頂点（二重丸）を動かすと上位境界も自動で連動します',
       polygon: 'クリックで頂点を追加し、始点クリックまたはダブルクリック / Enter で確定します',
       freehand: 'ドラッグして境界線をなぞり描きします（離すと自動で頂点を最適化してポリゴン化）',
       pan: 'ドラッグで画面を移動、ホイールで拡大・縮小します'
@@ -1147,6 +1457,23 @@
       propEmptyState.classList.add('hidden');
       propForm.classList.remove('hidden');
       propAdminLevel.value = selectedFeat.adminLevel;
+
+      // 親階層選択肢の構築（自分自身とその子孫は除外）
+      parentSelectorWrapper.classList.toggle('hidden', selectedFeat.adminLevel === 'prefecture');
+      propParentId.innerHTML = '<option value="">（なし / 独立）</option>';
+      state.features.forEach(candidate => {
+        if (candidate.id === selectedFeat.id) return;
+        if (selectedFeat.adminLevel === 'group' && candidate.adminLevel !== 'prefecture') return;
+        if (selectedFeat.adminLevel === 'municipality' && !['prefecture', 'group'].includes(candidate.adminLevel)) return;
+
+        const opt = document.createElement('option');
+        opt.value = candidate.id;
+        const prefix = candidate.adminLevel === 'group' ? '└ ' : '';
+        opt.textContent = `${prefix}${candidate.name}${candidate.suffix}`;
+        propParentId.appendChild(opt);
+      });
+      propParentId.value = selectedFeat.parentId || '';
+
       propName.value = selectedFeat.name;
       propSuffix.value = selectedFeat.suffix;
       propPrefecture.value = selectedFeat.prefecture || '';
@@ -1155,53 +1482,99 @@
       propCode.value = selectedFeat.code || '';
       propFillColor.value = selectedFeat.fillColor;
       propStrokeColor.value = selectedFeat.strokeColor;
+
+      // 選択中の階層に応じて「配下を追加」ボタンを表示
+      childCreatorBar.innerHTML = '';
+      if (selectedFeat.adminLevel === 'prefecture') {
+        childCreatorBar.innerHTML = `
+          <div class="flex gap-1.5 pt-1">
+            <button type="button" id="btn-add-sub-group" class="flex-1 py-1.5 px-2 rounded-lg text-[11px] font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition">
+              ＋ 郡・政令市を描画
+            </button>
+            <button type="button" id="btn-add-sub-muni" class="flex-1 py-1.5 px-2 rounded-lg text-[11px] font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition">
+              ＋ 市区町村を描画
+            </button>
+          </div>
+        `;
+        document.getElementById('btn-add-sub-group').addEventListener('click', () => {
+          startDrawingChildFeature(selectedFeat.id, 'group');
+        });
+        document.getElementById('btn-add-sub-muni').addEventListener('click', () => {
+          startDrawingChildFeature(selectedFeat.id, 'municipality');
+        });
+      } else if (selectedFeat.adminLevel === 'group') {
+        const subLabel = selectedFeat.suffix === '市' ? '行政区（〇〇区）を描画' : '配下の町村を描画';
+        childCreatorBar.innerHTML = `
+          <div class="pt-1">
+            <button type="button" id="btn-add-sub-ward" class="w-full py-1.5 px-2 rounded-lg text-[11px] font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition">
+              ＋ ${subLabel}
+            </button>
+          </div>
+        `;
+        document.getElementById('btn-add-sub-ward').addEventListener('click', () => {
+          startDrawingChildFeature(selectedFeat.id, 'municipality');
+        });
+      }
     } else {
       propEmptyState.classList.remove('hidden');
       propForm.classList.add('hidden');
     }
 
+    // 入れ子構造ツリー（階層リスト）のレンダリング
     layerCount.textContent = state.features.length;
     layerList.innerHTML = '';
 
-    for (let i = state.features.length - 1; i >= 0; i--) {
-      const feat = state.features[i];
+    const renderedIds = new Set();
+
+    function renderTreeNode(feat, depth) {
+      if (renderedIds.has(feat.id)) return;
+      renderedIds.add(feat.id);
+
+      const children = state.features.filter(f => f.parentId === feat.id);
+      const hasChildren = children.length > 0;
       const isSelected = feat.id === state.selectedId;
 
       const badgeMap = {
         prefecture: { text: '都道府県', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300' },
+        group: { text: '郡/政令市', cls: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300' },
         municipality: { text: '市区町村', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300' },
         island: { text: '所属未定', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300' }
       };
       const badge = badgeMap[feat.adminLevel] || badgeMap.municipality;
 
       const item = document.createElement('div');
-      item.className = `group flex items-center justify-between gap-2 p-2 rounded-xl border text-xs cursor-pointer transition ${
+      item.style.marginLeft = `${depth * 14}px`;
+      item.className = `group flex items-center justify-between gap-1.5 p-1.5 rounded-lg border text-xs cursor-pointer transition ${
         isSelected
           ? 'bg-blue-50/90 border-blue-400 dark:bg-blue-950/60 dark:border-blue-600 shadow-xs'
           : 'bg-slate-50/70 hover:bg-slate-100 border-slate-200/80 dark:bg-slate-800/40 dark:hover:bg-slate-800 dark:border-slate-800'
       }`;
 
       item.innerHTML = `
-        <div class="flex items-center gap-2 min-w-0 flex-1">
-          <button type="button" data-action="toggle-vis" class="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 shrink-0" title="表示/非表示">
+        <div class="flex items-center gap-1 min-w-0 flex-1">
+          ${hasChildren
+            ? `<button type="button" data-action="toggle-expand" class="w-4 h-4 flex items-center justify-center rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-[10px] text-slate-500 shrink-0">${feat.expanded !== false ? '▼' : '▶'}</button>`
+            : `<span class="w-4 text-center text-slate-300 dark:text-slate-600 text-[10px] shrink-0">${depth > 0 ? '└' : '•'}</span>`
+          }
+          <button type="button" data-action="toggle-vis" class="p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 shrink-0" title="表示/非表示">
             ${feat.visible
               ? '<svg class="w-3.5 h-3.5 text-slate-700 dark:text-slate-200" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>'
               : '<svg class="w-3.5 h-3.5 opacity-40" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>'
             }
           </button>
-          <span class="w-3 h-3 rounded-xs shrink-0 border border-black/20" style="background-color: ${feat.fillColor};"></span>
-          <div class="truncate">
+          <span class="w-2.5 h-2.5 rounded-xs shrink-0 border border-black/20" style="background-color: ${feat.fillColor};"></span>
+          <div class="truncate ml-0.5">
             <div class="font-semibold truncate ${feat.visible ? '' : 'opacity-45 line-through'}">${escapeHtml(feat.name + feat.suffix)}</div>
-            <div class="flex items-center gap-1.5 mt-0.5">
-              <span class="text-[9px] px-1.5 py-0.2 rounded font-medium ${badge.cls}">${badge.text}</span>
-              <span class="text-[10px] font-mono text-slate-400">${escapeHtml(feat.code || '')}</span>
+            <div class="flex items-center gap-1 mt-0.5">
+              <span class="text-[9px] px-1 py-0.2 rounded font-medium ${badge.cls}">${badge.text}</span>
+              <span class="text-[9px] font-mono text-slate-400">${escapeHtml(feat.code || '')}</span>
             </div>
           </div>
         </div>
-        <div class="flex items-center gap-0.5 opacity-75 group-hover:opacity-100 shrink-0">
-          <button type="button" data-action="move-up" ${i === state.features.length - 1 ? 'disabled' : ''} class="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-25" title="前面へ移動">▲</button>
-          <button type="button" data-action="move-down" ${i === 0 ? 'disabled' : ''} class="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-25" title="背面へ移動">▼</button>
-        </div>
+        ${(feat.adminLevel === 'prefecture' || feat.adminLevel === 'group')
+          ? `<button type="button" data-action="add-child" title="配下に市区町村を追加描画" class="opacity-0 group-hover:opacity-100 px-1.5 py-0.5 rounded bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300 text-[10px] font-bold shrink-0 transition">＋追加</button>`
+          : ''
+        }
       `;
 
       item.addEventListener('click', (e) => {
@@ -1209,21 +1582,16 @@
         if (actionBtn) {
           e.stopPropagation();
           const action = actionBtn.dataset.action;
-          if (action === 'toggle-vis') {
+          if (action === 'toggle-expand') {
+            feat.expanded = feat.expanded === false ? true : false;
+            syncUI();
+          } else if (action === 'toggle-vis') {
             feat.visible = !feat.visible;
             saveHistory();
             syncUI();
             render();
-          } else if (action === 'move-up' && i < state.features.length - 1) {
-            [state.features[i], state.features[i + 1]] = [state.features[i + 1], state.features[i]];
-            saveHistory();
-            syncUI();
-            render();
-          } else if (action === 'move-down' && i > 0) {
-            [state.features[i], state.features[i - 1]] = [state.features[i - 1], state.features[i]];
-            saveHistory();
-            syncUI();
-            render();
+          } else if (action === 'add-child') {
+            startDrawingChildFeature(feat.id, 'municipality');
           }
           return;
         }
@@ -1234,7 +1602,15 @@
       });
 
       layerList.appendChild(item);
+
+      if (feat.expanded !== false) {
+        children.forEach(child => renderTreeNode(child, depth + 1));
+      }
     }
+
+    // ルート階層（親を持たない都道府県など）から再帰描画
+    const roots = state.features.filter(f => !f.parentId || !state.features.some(p => p.id === f.parentId));
+    roots.forEach(root => renderTreeNode(root, 0));
   }
 
   function escapeHtml(str) {
@@ -1268,17 +1644,20 @@
 
         const fullName = `${f.name}${f.suffix}`;
         const isPref = f.adminLevel === 'prefecture';
+        const isGroup = f.adminLevel === 'group';
 
         const properties = {
           N03_001: isPref ? fullName : (f.prefecture || null),
           N03_002: f.subpref && f.subpref.trim() !== '' ? f.subpref.trim() : null,
-          N03_003: f.county && f.county.trim() !== '' ? f.county.trim() : null,
-          N03_004: isPref ? null : (fullName || null),
+          N03_003: isGroup ? fullName : (f.county && f.county.trim() !== '' ? f.county.trim() : null),
+          N03_004: (isPref || isGroup) ? null : (fullName || null),
           N03_007: f.code && f.code.trim() !== '' ? f.code.trim() : null
         };
 
         if (includeStyleMeta) {
           properties._editor = {
+            id: f.id,
+            parent_id: f.parentId || null,
             base_name: f.name,
             admin_label: f.suffix,
             admin_type: f.adminLevel,
@@ -1314,7 +1693,7 @@
 
   function splitAdminNameAndSuffix(fullName) {
     if (!fullName) return { name: '', suffix: '' };
-    const suffixes = ['県', '都', '道', '府', '市', '区', '町', '村', '島'];
+    const suffixes = ['振興局', '支庁', '県', '都', '道', '府', '郡', '市', '区', '町', '村', '島'];
     for (const s of suffixes) {
       if (fullName.endsWith(s) && fullName.length > s.length) {
         return {
@@ -1404,16 +1783,19 @@
         const n03Muni = props.N03_004 || '';
         const n03Code = props.N03_007 || props.code || '';
 
-        const isPrefPolygon = !n03Muni && Boolean(n03Pref) && editorMeta.admin_type !== 'municipality';
-        const targetFullName = n03Muni || n03Pref || props.name || `区画${i + 1}`;
+        const isPrefPolygon = !n03Muni && !n03County && Boolean(n03Pref) && editorMeta.admin_type !== 'municipality';
+        const isGroupPolygon = !n03Muni && Boolean(n03County) && editorMeta.admin_type !== 'municipality';
+
+        const targetFullName = n03Muni || n03County || n03Pref || props.name || `区画${i + 1}`;
         const split = splitAdminNameAndSuffix(targetFullName);
 
         const baseName = editorMeta.base_name || props.base_name || split.name;
         const suffix = editorMeta.admin_label !== undefined ? editorMeta.admin_label : split.suffix;
-        const adminLevel = editorMeta.admin_type || props.admin_type || (isPrefPolygon ? 'prefecture' : 'municipality');
+        const adminLevel = editorMeta.admin_type || props.admin_type || (isPrefPolygon ? 'prefecture' : isGroupPolygon ? 'group' : 'municipality');
 
         return {
-          id: `imp_${Date.now()}_${i}`,
+          id: editorMeta.id || `imp_${Date.now()}_${i}`,
+          parentId: editorMeta.parent_id || null,
           name: baseName,
           suffix: suffix,
           adminLevel,
@@ -1424,15 +1806,37 @@
           fillColor: editorMeta.fill || props.fill || palette.fill,
           strokeColor: editorMeta.stroke || props.stroke || palette.stroke,
           visible: true,
+          expanded: true,
           vertices: ring.map(([lon, lat]) => geoToWorld(lon, lat))
         };
+      });
+
+      // メタ情報がないN03ファイルの場合は、N03_001 / N03_003 の名称一致から自動で親子リンクを構築
+      state.features.forEach(feat => {
+        if (feat.parentId) return;
+        if (feat.adminLevel === 'group' && feat.prefecture) {
+          const pref = state.features.find(p => p.adminLevel === 'prefecture' && `${p.name}${p.suffix}` === feat.prefecture);
+          if (pref) feat.parentId = pref.id;
+        } else if (feat.adminLevel === 'municipality') {
+          if (feat.county) {
+            const grp = state.features.find(g => g.adminLevel === 'group' && `${g.name}${g.suffix}` === feat.county);
+            if (grp) {
+              feat.parentId = grp.id;
+              return;
+            }
+          }
+          if (feat.prefecture) {
+            const pref = state.features.find(p => p.adminLevel === 'prefecture' && `${p.name}${p.suffix}` === feat.prefecture);
+            if (pref) feat.parentId = pref.id;
+          }
+        }
       });
 
       state.selectedId = state.features[0]?.id || null;
       saveHistory();
       syncUI();
       fitViewToFeatures();
-      showToast(`${state.features.length}件の行政区域データを読み込みました`, 'success');
+      showToast(`${state.features.length}件の行政区域データを階層構築して読み込みました`, 'success');
     } catch (err) {
       console.error(err);
       showToast(`GeoJSONの解析に失敗しました: ${err.message}`, 'error');
@@ -1469,11 +1873,24 @@
     btnSnap.addEventListener('click', () => {
       state.snapEnabled = !state.snapEnabled;
       snapLabel.textContent = state.snapEnabled ? '吸着ON' : '吸着OFF';
-      statusSnapBadge.textContent = state.snapEnabled ? 'スナップ: 有効' : 'スナップ: 無効';
+      statusSnapBadge.textContent = state.snapEnabled ? '吸着: ON' : '吸着: OFF';
       btnSnap.className = state.snapEnabled
         ? 'w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-0.5 bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700 transition'
         : 'w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-0.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition';
       showToast(state.snapEnabled ? '頂点スナップを有効にしました' : '頂点スナップを無効にしました');
+      render();
+    });
+
+    const btnTopology = document.getElementById('btn-toggle-topology');
+    const topologyLabel = document.getElementById('topology-label');
+    btnTopology.addEventListener('click', () => {
+      state.topologySyncEnabled = !state.topologySyncEnabled;
+      topologyLabel.textContent = state.topologySyncEnabled ? '県境連動' : '単独編集';
+      statusTopologyBadge.textContent = state.topologySyncEnabled ? '県境連動: ON' : '県境連動: OFF';
+      btnTopology.className = state.topologySyncEnabled
+        ? 'w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-0.5 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-700 transition'
+        : 'w-11 h-11 rounded-xl flex flex-col items-center justify-center gap-0.5 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition';
+      showToast(state.topologySyncEnabled ? '共有境界（県境・郡境）の自動追従を有効にしました' : '境界を単独で編集するモードにしました');
       render();
     });
 
@@ -1495,13 +1912,20 @@
     document.getElementById('btn-finish-polygon').addEventListener('click', finishPolygonDrawing);
     document.getElementById('btn-cancel-polygon').addEventListener('click', cancelPolygonDrawing);
 
+    document.getElementById('btn-create-root-pref').addEventListener('click', () => {
+      startDrawingChildFeature(null, 'prefecture');
+    });
+    document.getElementById('btn-add-pref-quick').addEventListener('click', () => {
+      startDrawingChildFeature(null, 'prefecture');
+    });
+
     document.getElementById('btn-load-sample').addEventListener('click', () => {
       state.features = createSampleFeatures();
-      state.selectedId = state.features[3].id;
+      state.selectedId = state.features[2].id;
       saveHistory();
       syncUI();
       fitViewToFeatures();
-      showToast('架空「蒼海県」と4市区町村（N03形式）を読み込みました', 'success');
+      showToast('架空「蒼海県（政令市・郡・市区町村の入れ子構造）」を読み込みました', 'success');
     });
 
     document.getElementById('btn-clear-all').addEventListener('click', () => {
@@ -1533,21 +1957,50 @@
       rightPanel.classList.add('translate-x-full');
     });
 
-    const bindPropChange = (el, key, commitHistory = false) => {
+    // 階層レベル・親区画変更時の属性自動継承
+    propAdminLevel.addEventListener('change', () => {
+      const feat = state.features.find(f => f.id === state.selectedId);
+      if (!feat) return;
+      feat.adminLevel = propAdminLevel.value;
+      if (feat.adminLevel === 'prefecture') feat.parentId = null;
+      inheritHierarchyAttributes(feat);
+      saveHistory();
+      syncUI();
+      render();
+    });
+
+    propParentId.addEventListener('change', () => {
+      const feat = state.features.find(f => f.id === state.selectedId);
+      if (!feat) return;
+      feat.parentId = propParentId.value || null;
+      inheritHierarchyAttributes(feat);
+      saveHistory();
+      syncUI();
+      render();
+    });
+
+    const bindPropChange = (el, key, commitHistory = false, propagateChildren = false) => {
       el.addEventListener(commitHistory ? 'change' : 'input', () => {
         const feat = state.features.find(f => f.id === state.selectedId);
         if (!feat) return;
         feat[key] = el.value;
+        if (propagateChildren) {
+          state.features.forEach(child => {
+            if (child.parentId === feat.id) inheritHierarchyAttributes(child);
+            state.features.forEach(grandChild => {
+              if (grandChild.parentId === child.id) inheritHierarchyAttributes(grandChild);
+            });
+          });
+        }
         if (commitHistory) saveHistory();
         syncUI();
         render();
       });
     };
 
-    bindPropChange(propAdminLevel, 'adminLevel', true);
-    bindPropChange(propName, 'name', false);
+    bindPropChange(propName, 'name', false, true);
     propName.addEventListener('change', saveHistory);
-    bindPropChange(propSuffix, 'suffix', true);
+    bindPropChange(propSuffix, 'suffix', true, true);
     bindPropChange(propPrefecture, 'prefecture', false);
     propPrefecture.addEventListener('change', saveHistory);
     bindPropChange(propSubpref, 'subpref', false);
@@ -1595,7 +2048,12 @@
 
     document.getElementById('btn-delete-feature').addEventListener('click', () => {
       if (!state.selectedId) return;
-      state.features = state.features.filter(f => f.id !== state.selectedId);
+      const targetId = state.selectedId;
+      // 削除した親に紐づいていた子は親なしに昇格
+      state.features.forEach(f => {
+        if (f.parentId === targetId) f.parentId = null;
+      });
+      state.features = state.features.filter(f => f.id !== targetId);
       state.selectedId = null;
       saveHistory();
       syncUI();
@@ -1761,6 +2219,7 @@
         case 'f': setTool('freehand'); break;
         case 'h': setTool('pan'); break;
         case 's': btnSnap.click(); break;
+        case 't': btnTopology.click(); break;
         case '0': fitViewToFeatures(); break;
         case 'enter':
           if (state.tool === 'polygon' && state.drawingVertices.length >= 3) {
@@ -1782,11 +2241,13 @@
             const feat = state.features.find(f => f.id === state.selectedId);
             if (feat && state.hoveredVertex && state.hoveredVertex.featureId === feat.id) {
               if (feat.vertices.length > 3) {
+                const removedPt = { ...feat.vertices[state.hoveredVertex.vertexIndex] };
                 feat.vertices.splice(state.hoveredVertex.vertexIndex, 1);
+                deleteSharedVertices(removedPt, feat.id);
                 state.hoveredVertex = null;
                 saveHistory();
                 render();
-                showToast('頂点を削除しました');
+                showToast('頂点（および共有境界頂点）を削除しました');
               } else {
                 showToast('ポリゴンには最低3つの頂点が必要です', 'error');
               }
@@ -1873,7 +2334,7 @@
     initEvents();
     initPWA();
     state.features = createSampleFeatures();
-    state.selectedId = state.features[3].id;
+    state.selectedId = state.features[2].id;
     saveHistory();
     syncUI();
     resizeCanvas();
