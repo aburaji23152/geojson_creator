@@ -19,7 +19,6 @@
 
   // 国土数値情報(N03)準拠・3階層入れ子構造（県 ＞ 郡・政令市 ＞ 市区町村・区）のサンプル
   function createSampleFeatures() {
-    // 県境の外周頂点（子区画と座標を完全共有）
     const pNW = { x: -240, y: -170 };
     const pN1 = { x: -70, y: -195 };
     const pN2 = { x: 95, y: -180 };
@@ -30,14 +29,12 @@
     const pSW = { x: -155, y: 165 };
     const pW1 = { x: -260, y: 15 };
 
-    // 内部境界頂点
     const c1 = { x: -55, y: -35 };
     const c2 = { x: 75, y: -25 };
     const c3 = { x: 20, y: 75 };
     const c4 = { x: -110, y: 55 };
 
     return [
-      // 第1階層：都道府県
       {
         id: 'feat_pref_1',
         parentId: null,
@@ -57,7 +54,6 @@
           { ...pE1 }, { ...pSE }, { ...pS1 }, { ...pSW }, { ...pW1 }
         ]
       },
-      // 第2階層：政令指定都市（蒼海市）
       {
         id: 'feat_grp_city',
         parentId: 'feat_pref_1',
@@ -76,7 +72,6 @@
           { ...pW1 }, { ...c1 }, { ...c2 }, { ...c3 }, { ...pS1 }, { ...pSW }
         ]
       },
-      // 第3階層：政令市の行政区（中央区）
       {
         id: 'feat_muni_3',
         parentId: 'feat_grp_city',
@@ -95,7 +90,6 @@
           { ...c1 }, { ...c2 }, { ...c3 }, { ...pS1 }, { ...pSW }, { ...c4 }
         ]
       },
-      // 第3階層：政令市の行政区（西湊区）
       {
         id: 'feat_muni_4',
         parentId: 'feat_grp_city',
@@ -114,7 +108,6 @@
           { ...pW1 }, { ...c1 }, { ...c4 }, { ...pSW }
         ]
       },
-      // 第2階層：郡（北嶺郡）
       {
         id: 'feat_grp_gun',
         parentId: 'feat_pref_1',
@@ -133,7 +126,6 @@
           { ...pNW }, { ...pN1 }, { ...pN2 }, { ...c2 }, { ...c1 }, { ...pW1 }
         ]
       },
-      // 第3階層：郡配下の町（北嶺町）
       {
         id: 'feat_muni_1',
         parentId: 'feat_grp_gun',
@@ -152,7 +144,6 @@
           { ...pNW }, { ...pN1 }, { ...pN2 }, { ...c2 }, { ...c1 }, { ...pW1 }
         ]
       },
-      // 第3階層：県直下の一般市（東雲市）
       {
         id: 'feat_muni_2',
         parentId: 'feat_pref_1',
@@ -180,11 +171,11 @@
   const state = {
     features: [],
     selectedId: null,
-    pendingParentId: null, // 「＋配下を追加」から描画を開始する際の親ID
+    pendingParentId: null,
     pendingAdminLevel: null,
     tool: 'select',
     snapEnabled: true,
-    topologySyncEnabled: true, // 県境・郡境・隣接境界の自動追従フラグ
+    topologySyncEnabled: true,
     showGrid: true,
 
     camera: {
@@ -219,7 +210,7 @@
     dragStartScreen: { x: 0, y: 0 },
     dragStartCamera: { x: 0, y: 0 },
     dragTargetVertexIndex: -1,
-    dragLinkedVertices: [], // 同時に連動して動く共有頂点リスト [{ featureId, vertexIndex }]
+    dragLinkedVertices: [],
     dragStartFeatureVertices: null,
     isSpacePressed: false,
 
@@ -262,7 +253,7 @@
   const layerCount = document.getElementById('layer-count');
 
   // =========================================================================
-  // 4. ユーティリティ関数（座標変換・幾何演算・入れ子階層解決）
+  // 4. ユーティリティ関数（座標変換・幾何演算・ポリゴン和集合・入れ子階層解決）
   // =========================================================================
   function showToast(message, type = 'info') {
     const container = document.getElementById('toast-container');
@@ -284,7 +275,7 @@
     setTimeout(() => {
       toast.classList.add('opacity-0', 'translate-y-2');
       setTimeout(() => toast.remove(), 300);
-    }, 2600);
+    }, 2800);
   }
 
   function screenToWorld(sx, sy) {
@@ -327,17 +318,6 @@
 
   function dist(p1, p2) {
     return Math.hypot(p1.x - p2.x, p1.y - p2.y);
-  }
-
-  function pointToSegmentDist(p, a, b) {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const lenSq = dx * dx + dy * dy;
-    if (lenSq === 0) return { distance: dist(p, a), t: 0 };
-    let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq;
-    t = Math.max(0, Math.min(1, t));
-    const proj = { x: a.x + t * dx, y: a.y + t * dy };
-    return { distance: dist(p, proj), t };
   }
 
   function isPointInPolygon(pt, vertices) {
@@ -400,6 +380,293 @@
     const mag = Math.hypot(dx, dy);
     if (mag === 0) return dist(pt, lineStart);
     return Math.abs(dy * pt.x - dx * pt.y + lineEnd.x * lineStart.y - lineEnd.y * lineStart.x) / mag;
+  }
+
+  // =========================================================================
+  // 4-B. 複数ポリゴンの外周輪郭統合（平面走査・半辺グラフによる和集合輪郭抽出）
+  // =========================================================================
+  function getSegmentIntersection(a, b, c, d) {
+    const r = { x: b.x - a.x, y: b.y - a.y };
+    const s = { x: d.x - c.x, y: d.y - c.y };
+    const rxs = r.x * s.y - r.y * s.x;
+    if (Math.abs(rxs) < 1e-9) return null;
+    const cma = { x: c.x - a.x, y: c.y - a.y };
+    const t = (cma.x * s.y - cma.y * s.x) / rxs;
+    const u = (cma.x * r.y - cma.y * r.x) / rxs;
+    if (t > 1e-5 && t < 1 - 1e-5 && u > 1e-5 && u < 1 - 1e-5) {
+      return { x: a.x + t * r.x, y: a.y + t * r.y, t, u };
+    }
+    return null;
+  }
+
+  function pointOnSegmentParam(p, a, b) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq < 1e-9) return null;
+    const t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq;
+    if (t <= 1e-5 || t >= 1 - 1e-5) return null;
+    const projX = a.x + t * dx;
+    const projY = a.y + t * dy;
+    if (Math.hypot(p.x - projX, p.y - projY) <= 1.2) {
+      return t;
+    }
+    return null;
+  }
+
+  function ensureClockwiseRing(verts) {
+    let area = 0;
+    for (let i = 0; i < verts.length; i++) {
+      const p1 = verts[i];
+      const p2 = verts[(i + 1) % verts.length];
+      area += (p2.x - p1.x) * (p2.y + p1.y);
+    }
+    // スクリーン座標系（Y軸下向き）では signedArea < 0 が時計回り
+    if (area > 0) {
+      return [...verts].reverse();
+    }
+    return verts.map(v => ({ ...v }));
+  }
+
+  // 複数のポリゴン配列を受け取り、全体の外周輪郭（和集合の外縁ポリゴン）を返す
+  function computeUnionOuterBoundary(polygons) {
+    const validPolys = polygons
+      .filter(p => Array.isArray(p) && p.length >= 3)
+      .map(p => ensureClockwiseRing(p));
+
+    if (validPolys.length === 0) return [];
+    if (validPolys.length === 1) return validPolys[0];
+
+    // 1. すべての辺を収集
+    const rawEdges = [];
+    validPolys.forEach((poly, polyIdx) => {
+      for (let i = 0; i < poly.length; i++) {
+        rawEdges.push({
+          a: { ...poly[i] },
+          b: { ...poly[(i + 1) % poly.length] },
+          polyIdx
+        });
+      }
+    });
+
+    // 2. 交点および他ポリゴンの頂点が辺上に乗る位置で辺を細分化
+    const splitParams = rawEdges.map(() => [0, 1]);
+
+    for (let i = 0; i < rawEdges.length; i++) {
+      const e1 = rawEdges[i];
+      // 他ポリゴンの頂点が e1 の辺上にある場合
+      for (let p = 0; p < validPolys.length; p++) {
+        for (const v of validPolys[p]) {
+          const t = pointOnSegmentParam(v, e1.a, e1.b);
+          if (t !== null) splitParams[i].push(t);
+        }
+      }
+      // 他の辺との交差
+      for (let j = i + 1; j < rawEdges.length; j++) {
+        const e2 = rawEdges[j];
+        const hit = getSegmentIntersection(e1.a, e1.b, e2.a, e2.b);
+        if (hit) {
+          splitParams[i].push(hit.t);
+          splitParams[j].push(hit.u);
+        }
+      }
+    }
+
+    // 3. 座標スナップ（1.2px以内の頂点を同一ノードに統合）
+    const canonicalNodes = [];
+    function getCanonicalPoint(pt) {
+      for (const node of canonicalNodes) {
+        if (dist(node, pt) <= 1.2) return node;
+      }
+      const newNode = { x: Number(pt.x.toFixed(3)), y: Number(pt.y.toFixed(3)) };
+      canonicalNodes.push(newNode);
+      return newNode;
+    }
+
+    // 4. 細分化された有向サブセグメントのうち、「外側（他のどのポリゴン内部にも含まれない）境界辺」のみ抽出
+    const boundaryEdges = [];
+    for (let i = 0; i < rawEdges.length; i++) {
+      const e = rawEdges[i];
+      const ts = [...new Set(splitParams[i].map(v => Number(v.toFixed(6))))].sort((x, y) => x - y);
+
+      for (let k = 0; k < ts.length - 1; k++) {
+        const t0 = ts[k];
+        const t1 = ts[k + 1];
+        if (t1 - t0 < 1e-5) continue;
+
+        const p0 = getCanonicalPoint({
+          x: e.a.x + (e.b.x - e.a.x) * t0,
+          y: e.a.y + (e.b.y - e.a.y) * t0
+        });
+        const p1 = getCanonicalPoint({
+          x: e.a.x + (e.b.x - e.a.x) * t1,
+          y: e.a.y + (e.b.y - e.a.y) * t1
+        });
+        if (dist(p0, p1) < 0.5) continue;
+
+        // 辺の中点から左側法線（時計回りポリゴンの外側方向）に微小オフセットした点がどのポリゴン内部にもなければ外周辺
+        const mx = (p0.x + p1.x) / 2;
+        const my = (p0.y + p1.y) / 2;
+        const dx = p1.x - p0.x;
+        const dy = p1.y - p0.y;
+        const len = Math.hypot(dx, dy);
+        // スクリーン座標系で時計回り進行方向 (dx, dy) の外側は (dy/len, -dx/len)
+        const testOutsidePt = {
+          x: mx + (dy / len) * 0.8,
+          y: my - (dx / len) * 0.8
+        };
+
+        let isInsideAny = false;
+        for (let p = 0; p < validPolys.length; p++) {
+          if (isPointInPolygon(testOutsidePt, validPolys[p])) {
+            isInsideAny = true;
+            break;
+          }
+        }
+
+        if (!isInsideAny) {
+          // 既に逆向きの辺が存在する場合は相殺（共有内壁の除去）
+          const revIdx = boundaryEdges.findIndex(be => dist(be.from, p1) < 0.5 && dist(be.to, p0) < 0.5);
+          if (revIdx !== -1) {
+            boundaryEdges.splice(revIdx, 1);
+          } else {
+            const dupIdx = boundaryEdges.findIndex(be => dist(be.from, p0) < 0.5 && dist(be.to, p1) < 0.5);
+            if (dupIdx === -1) {
+              boundaryEdges.push({ from: p0, to: p1, used: false });
+            }
+          }
+        }
+      }
+    }
+
+    if (boundaryEdges.length < 3) {
+      return validPolys[0];
+    }
+
+    // 5. 外周辺を連結して最大の閉ループ（外周ポリゴン）を構築
+    const loops = [];
+    for (let startIdx = 0; startIdx < boundaryEdges.length; startIdx++) {
+      if (boundaryEdges[startIdx].used) continue;
+
+      const loop = [];
+      let curr = boundaryEdges[startIdx];
+      curr.used = true;
+      loop.push({ x: curr.from.x, y: curr.from.y });
+
+      let safety = 0;
+      while (safety++ < 2000) {
+        if (dist(curr.to, loop[0]) < 0.5 && loop.length >= 3) {
+          break;
+        }
+        loop.push({ x: curr.to.x, y: curr.to.y });
+
+        const candidates = boundaryEdges.filter(be => !be.used && dist(be.from, curr.to) < 0.5);
+        if (candidates.length === 0) break;
+
+        // 複数分岐がある場合は最も外回り（左折側）を選択
+        let chosen = candidates[0];
+        if (candidates.length > 1) {
+          const inAngle = Math.atan2(curr.from.y - curr.to.y, curr.from.x - curr.to.x);
+          let bestTurn = Infinity;
+          for (const cand of candidates) {
+            const outAngle = Math.atan2(cand.to.y - cand.from.y, cand.to.x - cand.from.x);
+            let diff = outAngle - inAngle;
+            while (diff <= 0) diff += Math.PI * 2;
+            if (diff < bestTurn) {
+              bestTurn = diff;
+              chosen = cand;
+            }
+          }
+        }
+        chosen.used = true;
+        curr = chosen;
+      }
+
+      if (loop.length >= 3) {
+        loops.push(loop);
+      }
+    }
+
+    if (loops.length === 0) return validPolys[0];
+
+    // 面積が最大のループ（最外周）を選択し、一直線上の不要な中間点を整理
+    loops.sort((a, b) => Math.abs(polygonSignedArea(b)) - Math.abs(polygonSignedArea(a)));
+    return removeCollinearVertices(loops[0]);
+  }
+
+  function polygonSignedArea(verts) {
+    let area = 0;
+    for (let i = 0; i < verts.length; i++) {
+      const p1 = verts[i];
+      const p2 = verts[(i + 1) % verts.length];
+      area += (p2.x - p1.x) * (p2.y + p1.y);
+    }
+    return area * 0.5;
+  }
+
+  function removeCollinearVertices(verts) {
+    if (verts.length <= 3) return verts;
+    const result = [];
+    const n = verts.length;
+    for (let i = 0; i < n; i++) {
+      const prev = verts[(i - 1 + n) % n];
+      const curr = verts[i];
+      const next = verts[(i + 1) % n];
+      const cross = Math.abs((curr.x - prev.x) * (next.y - curr.y) - (curr.y - prev.y) * (next.x - curr.x));
+      const len1 = dist(prev, curr);
+      const len2 = dist(curr, next);
+      if (len1 > 0.5 && len2 > 0.5 && cross / (len1 * len2) > 0.015) {
+        result.push(curr);
+      }
+    }
+    return result.length >= 3 ? result : verts;
+  }
+
+  // 新しく追加された区画（newChildFeat）を含めて、親（郡・政令市）および祖父（県）の外周境界を自動拡張
+  function expandAncestorBoundariesWithNewChild(newChildFeat) {
+    let currChild = newChildFeat;
+    let expandedNames = [];
+
+    while (currChild && currChild.parentId) {
+      const parent = state.features.find(f => f.id === currChild.parentId);
+      if (!parent) break;
+
+      if (parent.vertices && parent.vertices.length >= 3 && currChild.vertices && currChild.vertices.length >= 3) {
+        const mergedOuter = computeUnionOuterBoundary([parent.vertices, currChild.vertices]);
+        if (mergedOuter && mergedOuter.length >= 3) {
+          parent.vertices = mergedOuter;
+          expandedNames.push(`${parent.name}${parent.suffix}`);
+        }
+      }
+      currChild = parent;
+    }
+
+    return expandedNames;
+  }
+
+  // 指定した親区画（県・郡・政令市）の配下にある全子孫ポリゴンから外周境界を再構築する
+  function rebuildParentBoundaryFromDescendants(parentFeat) {
+    const collectDescendantPolygons = (pid) => {
+      const directChildren = state.features.filter(f => f.parentId === pid);
+      let polys = [];
+      for (const ch of directChildren) {
+        if (ch.vertices && ch.vertices.length >= 3) {
+          polys.push(ch.vertices);
+        }
+        polys = polys.concat(collectDescendantPolygons(ch.id));
+      }
+      return polys;
+    };
+
+    const childPolys = collectDescendantPolygons(parentFeat.id);
+    if (childPolys.length === 0) return false;
+
+    const unionOuter = computeUnionOuterBoundary(childPolys);
+    if (unionOuter && unionOuter.length >= 3) {
+      parentFeat.vertices = unionOuter;
+      return true;
+    }
+    return false;
   }
 
   // 親階層（都道府県・郡・政令市）からN03属性（N03_001〜003）を自動継承する
@@ -489,7 +756,6 @@
       if (!feat.visible) continue;
       for (let i = 0; i < feat.vertices.length; i++) {
         if (feat.id === excludeFeatureId && i === excludeVertexIndex) continue;
-        // 連動ドラッグ中の頂点自身にはスナップしない
         if (state.dragLinkedVertices.some(lv => lv.featureId === feat.id && lv.vertexIndex === i)) {
           continue;
         }
@@ -510,7 +776,6 @@
     return bestTarget;
   }
 
-  // 指定座標と一致（または極近接）する他ポリゴンの頂点をすべて収集（県境・郡境連動用）
   function collectSharedVertices(worldPt, sourceFeatureId, sourceVertexIndex) {
     if (!state.topologySyncEnabled) return [];
     const TOLERANCE_WORLD = 1.5;
@@ -530,7 +795,6 @@
     return linked;
   }
 
-  // 辺の中点に頂点を挿入した際、同じ辺（共有県境・郡境）を持つ他ポリゴンにも同時に頂点を挿入
   function insertSharedEdgeMidpoint(v1, v2, newMidPt, sourceFeatureId) {
     if (!state.topologySyncEnabled) return;
     const TOLERANCE_WORLD = 1.5;
@@ -551,7 +815,6 @@
     }
   }
 
-  // 頂点を削除した際、同じ座標を共有している他ポリゴン（県境・郡境）の頂点も同時に削除
   function deleteSharedVertices(worldPt, sourceFeatureId) {
     if (!state.topologySyncEnabled) return;
     const TOLERANCE_WORLD = 1.5;
@@ -569,7 +832,7 @@
   }
 
   // =========================================================================
-  // 7. キャンバス描画エンジン（階層ごとの描画順・境界線スタイル差別化）
+  // 7. キャンバス描画エンジン
   // =========================================================================
   function resizeCanvas() {
     const rect = canvasContainer.getBoundingClientRect();
@@ -597,7 +860,6 @@
       drawUnderlayImage();
     }
 
-    // 描画順序: 第1階層(都道府県) → 第2階層(郡・政令市) → 第3階層(市区町村・区) の順に重ねる
     const levelOrder = { prefecture: 1, group: 2, municipality: 3, island: 3 };
     const sortedFeatures = [...state.features].sort((a, b) => {
       return (levelOrder[a.adminLevel] || 3) - (levelOrder[b.adminLevel] || 3);
@@ -609,7 +871,6 @@
       drawFeaturePolygon(feat, isSelected, isDark);
     }
 
-    // 選択中ポリゴンの頂点・中点ハンドル（連動する共有頂点もハイライト）
     if (state.tool === 'select' && state.selectedId) {
       const selectedFeat = state.features.find(f => f.id === state.selectedId);
       if (selectedFeat && selectedFeat.visible) {
@@ -715,7 +976,6 @@
     }
     ctx.closePath();
 
-    // 階層ごとに塗りの透明度を調整（上位階層は薄くして下位の市区町村を見やすくする）
     let fillAlpha = 0.32;
     if (feat.adminLevel === 'prefecture') {
       fillAlpha = isSelected ? 0.16 : 0.07;
@@ -728,7 +988,6 @@
     ctx.fillStyle = hexToRgba(feat.fillColor, fillAlpha);
     ctx.fill();
 
-    // 階層ごとに境界線スタイルを差別化（県境＝太い破線、郡・政令市境＝一点鎖線、市区町村境＝実線）
     ctx.strokeStyle = isSelected ? '#2563eb' : feat.strokeColor;
     if (feat.adminLevel === 'prefecture') {
       ctx.lineWidth = isSelected ? 4.5 : 3.5;
@@ -753,7 +1012,6 @@
       ctx.stroke();
     }
 
-    // ラベル表示（都道府県・郡・政令市は重ならないよう少し上方にオフセット）
     const fullName = `${feat.name}${feat.suffix}`;
     if (fullName.trim() !== '') {
       const centroidWorld = getPolygonCentroid(feat.vertices);
@@ -794,7 +1052,6 @@
     const verts = feat.vertices;
     ctx.save();
 
-    // 辺の中点ハンドル
     for (let i = 0; i < verts.length; i++) {
       const v1 = verts[i];
       const v2 = verts[(i + 1) % verts.length];
@@ -814,7 +1071,6 @@
       ctx.stroke();
     }
 
-    // 頂点ハンドル（県境・郡境などと共有している頂点は二重リングで表示）
     for (let i = 0; i < verts.length; i++) {
       const sp = worldToScreen(verts[i].x, verts[i].y);
       const isHovered = state.hoveredVertex && state.hoveredVertex.vertexIndex === i;
@@ -952,7 +1208,6 @@
     const selectedFeat = state.features.find(f => f.id === state.selectedId);
 
     if (selectedFeat && selectedFeat.visible) {
-      // 1. 頂点ハンドルのドラッグ判定（県境・郡境・隣接境界の共有頂点も収集）
       for (let i = 0; i < selectedFeat.vertices.length; i++) {
         const vs = worldToScreen(selectedFeat.vertices[i].x, selectedFeat.vertices[i].y);
         if (dist(screenPt, vs) <= 10) {
@@ -963,7 +1218,6 @@
         }
       }
 
-      // 2. 辺の中点ハンドルからの新規頂点追加（共有境界にも同時挿入）
       for (let i = 0; i < selectedFeat.vertices.length; i++) {
         const v1 = selectedFeat.vertices[i];
         const v2 = selectedFeat.vertices[(i + 1) % selectedFeat.vertices.length];
@@ -982,7 +1236,6 @@
       }
     }
 
-    // 3. ポリゴンのクリック選択（重なっている場合は下位階層＝市区町村を優先し、再クリックで親階層へ循環）
     const levelPriority = { municipality: 3, island: 3, group: 2, prefecture: 1 };
     const hitCandidates = state.features
       .filter(feat => feat.visible && feat.vertices.length >= 3 && isPointInPolygon(state.mouseWorld, feat.vertices))
@@ -1060,7 +1313,6 @@
       return;
     }
 
-    // 頂点ドラッグ移動（共有している県境・郡境・隣接境界の頂点も同時に移動）
     if (state.dragMode === 'vertex' && state.selectedId) {
       const feat = state.features.find(f => f.id === state.selectedId);
       if (feat) {
@@ -1164,7 +1416,6 @@
     render();
   }
 
-  // 右クリックで頂点削除（共有している県境・郡境の頂点も連動削除）
   canvas.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     if (state.tool !== 'select' || !state.selectedId) return;
@@ -1218,7 +1469,7 @@
   }, { passive: false });
 
   // =========================================================================
-  // 9. 新規ポリゴン・入れ子階層作成処理
+  // 9. 新規ポリゴン・入れ子階層作成処理（追加した領域も含めて県・郡の境界を自動拡張）
   // =========================================================================
   function startDrawingChildFeature(parentId, targetAdminLevel) {
     state.pendingParentId = parentId;
@@ -1235,7 +1486,7 @@
       : `新規${levelLabel}`;
 
     setTool('polygon');
-    showToast(`地図をクリックして境界を描画してください（Enterで確定）`);
+    showToast(`地図をクリックして境界を描画してください（はみ出した分は親の県・郡も自動拡張します）`);
   }
 
   function createNewFeatureFromVertices(vertices) {
@@ -1245,7 +1496,6 @@
     let parentId = state.pendingParentId;
     let adminLevel = state.pendingAdminLevel;
 
-    // 通常の描画ボタンから描いた場合は、現在選択中の地物の階層から適切な親を自動推測
     if (!adminLevel) {
       const currentSelected = state.features.find(f => f.id === state.selectedId);
       if (currentSelected) {
@@ -1316,11 +1566,20 @@
     drawingTargetLabel.textContent = '新規ポリゴン';
 
     state.features.push(newFeat);
+
+    // 追加された区画を含めて親（郡・政令市）および祖父（都道府県）の外周境界を自動拡張
+    const expandedAncestors = expandAncestorBoundariesWithNewChild(newFeat);
+
     state.selectedId = newFeat.id;
     saveHistory();
     syncUI();
     render();
-    showToast(`「${newFeat.name}${newFeat.suffix}」を作成しました`, 'success');
+
+    if (expandedAncestors.length > 0) {
+      showToast(`「${newFeat.name}${newFeat.suffix}」を追加し、${expandedAncestors.join('・')} の境界も自動更新しました`, 'success');
+    } else {
+      showToast(`「${newFeat.name}${newFeat.suffix}」を作成しました`, 'success');
+    }
   }
 
   function finishPolygonDrawing() {
@@ -1458,7 +1717,6 @@
       propForm.classList.remove('hidden');
       propAdminLevel.value = selectedFeat.adminLevel;
 
-      // 親階層選択肢の構築（自分自身とその子孫は除外）
       parentSelectorWrapper.classList.toggle('hidden', selectedFeat.adminLevel === 'prefecture');
       propParentId.innerHTML = '<option value="">（なし / 独立）</option>';
       state.features.forEach(candidate => {
@@ -1483,16 +1741,21 @@
       propFillColor.value = selectedFeat.fillColor;
       propStrokeColor.value = selectedFeat.strokeColor;
 
-      // 選択中の階層に応じて「配下を追加」ボタンを表示
+      // 選択中の階層に応じて「配下を追加」および「子区画に合わせて外周を再構築」ボタンを表示
       childCreatorBar.innerHTML = '';
       if (selectedFeat.adminLevel === 'prefecture') {
         childCreatorBar.innerHTML = `
-          <div class="flex gap-1.5 pt-1">
-            <button type="button" id="btn-add-sub-group" class="flex-1 py-1.5 px-2 rounded-lg text-[11px] font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition">
-              ＋ 郡・政令市を描画
-            </button>
-            <button type="button" id="btn-add-sub-muni" class="flex-1 py-1.5 px-2 rounded-lg text-[11px] font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition">
-              ＋ 市区町村を描画
+          <div class="space-y-1.5 pt-1">
+            <div class="flex gap-1.5">
+              <button type="button" id="btn-add-sub-group" class="flex-1 py-1.5 px-2 rounded-lg text-[11px] font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition">
+                ＋ 郡・政令市を描画
+              </button>
+              <button type="button" id="btn-add-sub-muni" class="flex-1 py-1.5 px-2 rounded-lg text-[11px] font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition">
+                ＋ 市区町村を描画
+              </button>
+            </div>
+            <button type="button" id="btn-rebuild-parent-boundary" class="w-full py-1.5 px-2 rounded-lg text-[11px] font-medium bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800 transition">
+              🔄 配下の郡・市区町村に合わせて県境を自動再構築
             </button>
           </div>
         `;
@@ -1502,17 +1765,39 @@
         document.getElementById('btn-add-sub-muni').addEventListener('click', () => {
           startDrawingChildFeature(selectedFeat.id, 'municipality');
         });
+        document.getElementById('btn-rebuild-parent-boundary').addEventListener('click', () => {
+          if (rebuildParentBoundaryFromDescendants(selectedFeat)) {
+            saveHistory();
+            render();
+            showToast(`「${selectedFeat.name}${selectedFeat.suffix}」の外周境界を配下区画に合わせて再構築しました`, 'success');
+          } else {
+            showToast('配下に所属する区画がありません', 'error');
+          }
+        });
       } else if (selectedFeat.adminLevel === 'group') {
         const subLabel = selectedFeat.suffix === '市' ? '行政区（〇〇区）を描画' : '配下の町村を描画';
         childCreatorBar.innerHTML = `
-          <div class="pt-1">
+          <div class="space-y-1.5 pt-1">
             <button type="button" id="btn-add-sub-ward" class="w-full py-1.5 px-2 rounded-lg text-[11px] font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition">
               ＋ ${subLabel}
+            </button>
+            <button type="button" id="btn-rebuild-group-boundary" class="w-full py-1.5 px-2 rounded-lg text-[11px] font-medium bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800 transition">
+              🔄 配下の市区町村に合わせて境界（および県境）を自動更新
             </button>
           </div>
         `;
         document.getElementById('btn-add-sub-ward').addEventListener('click', () => {
           startDrawingChildFeature(selectedFeat.id, 'municipality');
+        });
+        document.getElementById('btn-rebuild-group-boundary').addEventListener('click', () => {
+          if (rebuildParentBoundaryFromDescendants(selectedFeat)) {
+            expandAncestorBoundariesWithNewChild(selectedFeat);
+            saveHistory();
+            render();
+            showToast(`「${selectedFeat.name}${selectedFeat.suffix}」と親都道府県の境界を更新しました`, 'success');
+          } else {
+            showToast('配下に所属する区画がありません', 'error');
+          }
         });
       }
     } else {
@@ -1520,7 +1805,6 @@
       propForm.classList.add('hidden');
     }
 
-    // 入れ子構造ツリー（階層リスト）のレンダリング
     layerCount.textContent = state.features.length;
     layerList.innerHTML = '';
 
@@ -1572,7 +1856,7 @@
           </div>
         </div>
         ${(feat.adminLevel === 'prefecture' || feat.adminLevel === 'group')
-          ? `<button type="button" data-action="add-child" title="配下に市区町村を追加描画" class="opacity-0 group-hover:opacity-100 px-1.5 py-0.5 rounded bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300 text-[10px] font-bold shrink-0 transition">＋追加</button>`
+          ? `<button type="button" data-action="add-child" title="配下に市区町村を追加描画（県・郡も自動拡張）" class="opacity-0 group-hover:opacity-100 px-1.5 py-0.5 rounded bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300 text-[10px] font-bold shrink-0 transition">＋追加</button>`
           : ''
         }
       `;
@@ -1608,7 +1892,6 @@
       }
     }
 
-    // ルート階層（親を持たない都道府県など）から再帰描画
     const roots = state.features.filter(f => !f.parentId || !state.features.some(p => p.id === f.parentId));
     roots.forEach(root => renderTreeNode(root, 0));
   }
@@ -1630,7 +1913,6 @@
       .map(f => {
         let ring = f.vertices.map(v => worldToGeo(v.x, v.y));
 
-        // RFC 7946: 外周リングを反時計回り(CCW)に正規化
         let signedArea = 0;
         for (let i = 0; i < ring.length; i++) {
           const p1 = ring[i];
@@ -1811,7 +2093,6 @@
         };
       });
 
-      // メタ情報がないN03ファイルの場合は、N03_001 / N03_003 の名称一致から自動で親子リンクを構築
       state.features.forEach(feat => {
         if (feat.parentId) return;
         if (feat.adminLevel === 'group' && feat.prefecture) {
@@ -1957,7 +2238,6 @@
       rightPanel.classList.add('translate-x-full');
     });
 
-    // 階層レベル・親区画変更時の属性自動継承
     propAdminLevel.addEventListener('change', () => {
       const feat = state.features.find(f => f.id === state.selectedId);
       if (!feat) return;
@@ -1974,6 +2254,7 @@
       if (!feat) return;
       feat.parentId = propParentId.value || null;
       inheritHierarchyAttributes(feat);
+      expandAncestorBoundariesWithNewChild(feat);
       saveHistory();
       syncUI();
       render();
@@ -2039,6 +2320,7 @@
       copy.name = `${copy.name}のコピー`;
       copy.vertices = copy.vertices.map(v => ({ x: v.x + 25, y: v.y + 25 }));
       state.features.push(copy);
+      expandAncestorBoundariesWithNewChild(copy);
       state.selectedId = copy.id;
       saveHistory();
       syncUI();
@@ -2049,7 +2331,6 @@
     document.getElementById('btn-delete-feature').addEventListener('click', () => {
       if (!state.selectedId) return;
       const targetId = state.selectedId;
-      // 削除した親に紐づいていた子は親なしに昇格
       state.features.forEach(f => {
         if (f.parentId === targetId) f.parentId = null;
       });
