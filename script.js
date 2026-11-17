@@ -17,7 +17,6 @@
     { fill: '#64748b', stroke: '#334155', label: 'スレート' }
   ];
 
-  // 国土数値情報(N03)準拠・3階層入れ子構造（県 ＞ 郡・政令市 ＞ 市区町村・区）のサンプル
   function createSampleFeatures() {
     const pNW = { x: -240, y: -170 };
     const pN1 = { x: -70, y: -195 };
@@ -253,7 +252,7 @@
   const layerCount = document.getElementById('layer-count');
 
   // =========================================================================
-  // 4. ユーティリティ関数（座標変換・幾何演算・ポリゴン和集合・入れ子階層解決）
+  // 4. ユーティリティ関数（座標変換・幾何演算・ポリゴン統合）
   // =========================================================================
   function showToast(message, type = 'info') {
     const container = document.getElementById('toast-container');
@@ -332,6 +331,25 @@
     return inside;
   }
 
+  function isPointOnBoundaryOrInside(pt, vertices, eps = 1.5) {
+    if (isPointInPolygon(pt, vertices)) return true;
+    for (let i = 0; i < vertices.length; i++) {
+      const a = vertices[i];
+      const b = vertices[(i + 1) % vertices.length];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const lenSq = dx * dx + dy * dy;
+      if (lenSq === 0) {
+        if (dist(pt, a) <= eps) return true;
+        continue;
+      }
+      const t = Math.max(0, Math.min(1, ((pt.x - a.x) * dx + (pt.y - a.y) * dy) / lenSq));
+      const proj = { x: a.x + t * dx, y: a.y + t * dy };
+      if (dist(pt, proj) <= eps) return true;
+    }
+    return false;
+  }
+
   function getPolygonCentroid(vertices) {
     if (!vertices || vertices.length === 0) return { x: 0, y: 0 };
     let area = 0, cx = 0, cy = 0;
@@ -383,7 +401,7 @@
   }
 
   // =========================================================================
-  // 4-B. 複数ポリゴンの外周輪郭統合（平面走査・半辺グラフによる和集合輪郭抽出）
+  // 4-B. 複数ポリゴンの外周輪郭統合（2D平面アレンジメント＋外周トレース）
   // =========================================================================
   function getSegmentIntersection(a, b, c, d) {
     const r = { x: b.x - a.x, y: b.y - a.y };
@@ -393,7 +411,7 @@
     const cma = { x: c.x - a.x, y: c.y - a.y };
     const t = (cma.x * s.y - cma.y * s.x) / rxs;
     const u = (cma.x * r.y - cma.y * r.x) / rxs;
-    if (t > 1e-5 && t < 1 - 1e-5 && u > 1e-5 && u < 1 - 1e-5) {
+    if (t > 1e-4 && t < 1 - 1e-4 && u > 1e-4 && u < 1 - 1e-4) {
       return { x: a.x + t * r.x, y: a.y + t * r.y, t, u };
     }
     return null;
@@ -403,12 +421,12 @@
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     const lenSq = dx * dx + dy * dy;
-    if (lenSq < 1e-9) return null;
+    if (lenSq < 1e-6) return null;
     const t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq;
-    if (t <= 1e-5 || t >= 1 - 1e-5) return null;
+    if (t <= 1e-4 || t >= 1 - 1e-4) return null;
     const projX = a.x + t * dx;
     const projY = a.y + t * dy;
-    if (Math.hypot(p.x - projX, p.y - projY) <= 1.2) {
+    if (Math.hypot(p.x - projX, p.y - projY) <= 2.5) {
       return t;
     }
     return null;
@@ -421,11 +439,36 @@
       const p2 = verts[(i + 1) % verts.length];
       area += (p2.x - p1.x) * (p2.y + p1.y);
     }
-    // スクリーン座標系（Y軸下向き）では signedArea < 0 が時計回り
+    // Y軸下向き座標系では area < 0 が時計回り
     if (area > 0) {
-      return [...verts].reverse();
+      return [...verts].reverse().map(v => ({ x: v.x, y: v.y }));
     }
-    return verts.map(v => ({ ...v }));
+    return verts.map(v => ({ x: v.x, y: v.y }));
+  }
+
+  // 凸包フォールバック（離れ島として追加された場合でも確実に親ポリゴンを広げる）
+  function computeConvexHull(points) {
+    const pts = [...points].sort((a, b) => a.x === b.x ? a.y - b.y : a.x - b.x);
+    if (pts.length <= 3) return pts;
+    const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+    const lower = [];
+    for (const p of pts) {
+      while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+        lower.pop();
+      }
+      lower.push(p);
+    }
+    const upper = [];
+    for (let i = pts.length - 1; i >= 0; i--) {
+      const p = pts[i];
+      while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+        upper.pop();
+      }
+      upper.push(p);
+    }
+    upper.pop();
+    lower.pop();
+    return lower.concat(upper);
   }
 
   // 複数のポリゴン配列を受け取り、全体の外周輪郭（和集合の外縁ポリゴン）を返す
@@ -454,14 +497,12 @@
 
     for (let i = 0; i < rawEdges.length; i++) {
       const e1 = rawEdges[i];
-      // 他ポリゴンの頂点が e1 の辺上にある場合
       for (let p = 0; p < validPolys.length; p++) {
         for (const v of validPolys[p]) {
           const t = pointOnSegmentParam(v, e1.a, e1.b);
           if (t !== null) splitParams[i].push(t);
         }
       }
-      // 他の辺との交差
       for (let j = i + 1; j < rawEdges.length; j++) {
         const e2 = rawEdges[j];
         const hit = getSegmentIntersection(e1.a, e1.b, e2.a, e2.b);
@@ -472,27 +513,27 @@
       }
     }
 
-    // 3. 座標スナップ（1.2px以内の頂点を同一ノードに統合）
+    // 3. 座標スナップ（2.5px以内の近接頂点を同一ノードに統合して隙間を防止）
     const canonicalNodes = [];
     function getCanonicalPoint(pt) {
       for (const node of canonicalNodes) {
-        if (dist(node, pt) <= 1.2) return node;
+        if (dist(node, pt) <= 2.5) return node;
       }
       const newNode = { x: Number(pt.x.toFixed(3)), y: Number(pt.y.toFixed(3)) };
       canonicalNodes.push(newNode);
       return newNode;
     }
 
-    // 4. 細分化された有向サブセグメントのうち、「外側（他のどのポリゴン内部にも含まれない）境界辺」のみ抽出
+    // 4. 細分化された有向サブセグメントから、外周境界辺のみを抽出
     const boundaryEdges = [];
     for (let i = 0; i < rawEdges.length; i++) {
       const e = rawEdges[i];
-      const ts = [...new Set(splitParams[i].map(v => Number(v.toFixed(6))))].sort((x, y) => x - y);
+      const ts = [...new Set(splitParams[i].map(v => Number(v.toFixed(5))))].sort((x, y) => x - y);
 
       for (let k = 0; k < ts.length - 1; k++) {
         const t0 = ts[k];
         const t1 = ts[k + 1];
-        if (t1 - t0 < 1e-5) continue;
+        if (t1 - t0 < 1e-4) continue;
 
         const p0 = getCanonicalPoint({
           x: e.a.x + (e.b.x - e.a.x) * t0,
@@ -502,18 +543,18 @@
           x: e.a.x + (e.b.x - e.a.x) * t1,
           y: e.a.y + (e.b.y - e.a.y) * t1
         });
-        if (dist(p0, p1) < 0.5) continue;
+        if (dist(p0, p1) < 0.8) continue;
 
-        // 辺の中点から左側法線（時計回りポリゴンの外側方向）に微小オフセットした点がどのポリゴン内部にもなければ外周辺
         const mx = (p0.x + p1.x) / 2;
         const my = (p0.y + p1.y) / 2;
         const dx = p1.x - p0.x;
         const dy = p1.y - p0.y;
         const len = Math.hypot(dx, dy);
-        // スクリーン座標系で時計回り進行方向 (dx, dy) の外側は (dy/len, -dx/len)
+
+        // 時計回り進行方向 (dx, dy) の外側法線方向（Y軸下向き系では (dy/len, -dx/len)）
         const testOutsidePt = {
-          x: mx + (dy / len) * 0.8,
-          y: my - (dx / len) * 0.8
+          x: mx + (dy / len) * 2.2,
+          y: my - (dx / len) * 2.2
         };
 
         let isInsideAny = false;
@@ -525,12 +566,12 @@
         }
 
         if (!isInsideAny) {
-          // 既に逆向きの辺が存在する場合は相殺（共有内壁の除去）
-          const revIdx = boundaryEdges.findIndex(be => dist(be.from, p1) < 0.5 && dist(be.to, p0) < 0.5);
+          // 逆向きの辺がすでにある場合は共有境界（内壁）なので相殺除去
+          const revIdx = boundaryEdges.findIndex(be => dist(be.from, p1) < 1.0 && dist(be.to, p0) < 1.0);
           if (revIdx !== -1) {
             boundaryEdges.splice(revIdx, 1);
           } else {
-            const dupIdx = boundaryEdges.findIndex(be => dist(be.from, p0) < 0.5 && dist(be.to, p1) < 0.5);
+            const dupIdx = boundaryEdges.findIndex(be => dist(be.from, p0) < 1.0 && dist(be.to, p1) < 1.0);
             if (dupIdx === -1) {
               boundaryEdges.push({ from: p0, to: p1, used: false });
             }
@@ -539,11 +580,7 @@
       }
     }
 
-    if (boundaryEdges.length < 3) {
-      return validPolys[0];
-    }
-
-    // 5. 外周辺を連結して最大の閉ループ（外周ポリゴン）を構築
+    // 5. 外周辺を連結して最大の閉ループ（最外周ポリゴン）を構築
     const loops = [];
     for (let startIdx = 0; startIdx < boundaryEdges.length; startIdx++) {
       if (boundaryEdges[startIdx].used) continue;
@@ -554,16 +591,15 @@
       loop.push({ x: curr.from.x, y: curr.from.y });
 
       let safety = 0;
-      while (safety++ < 2000) {
-        if (dist(curr.to, loop[0]) < 0.5 && loop.length >= 3) {
+      while (safety++ < 3000) {
+        if (dist(curr.to, loop[0]) < 1.0 && loop.length >= 3) {
           break;
         }
         loop.push({ x: curr.to.x, y: curr.to.y });
 
-        const candidates = boundaryEdges.filter(be => !be.used && dist(be.from, curr.to) < 0.5);
+        const candidates = boundaryEdges.filter(be => !be.used && dist(be.from, curr.to) < 1.0);
         if (candidates.length === 0) break;
 
-        // 複数分岐がある場合は最も外回り（左折側）を選択
         let chosen = candidates[0];
         if (candidates.length > 1) {
           const inAngle = Math.atan2(curr.from.y - curr.to.y, curr.from.x - curr.to.x);
@@ -587,11 +623,22 @@
       }
     }
 
-    if (loops.length === 0) return validPolys[0];
+    const originalArea = Math.abs(polygonSignedArea(validPolys[0]));
 
-    // 面積が最大のループ（最外周）を選択し、一直線上の不要な中間点を整理
-    loops.sort((a, b) => Math.abs(polygonSignedArea(b)) - Math.abs(polygonSignedArea(a)));
-    return removeCollinearVertices(loops[0]);
+    if (loops.length > 0) {
+      loops.sort((a, b) => Math.abs(polygonSignedArea(b)) - Math.abs(polygonSignedArea(a)));
+      const bestLoop = removeCollinearVertices(loops[0]);
+      const bestArea = Math.abs(polygonSignedArea(bestLoop));
+
+      // 面積が元の親ポリゴン以上に広がっている、または頂点が変わっていれば採用
+      if (bestArea >= originalArea * 0.98) {
+        return bestLoop;
+      }
+    }
+
+    // 離れ島（完全に離れた位置）に新しい市区町村を追加した場合は、全体を包含する外郭で拡張
+    const allPts = validPolys.flat();
+    return computeConvexHull(allPts);
   }
 
   function polygonSignedArea(verts) {
@@ -615,27 +662,32 @@
       const cross = Math.abs((curr.x - prev.x) * (next.y - curr.y) - (curr.y - prev.y) * (next.x - curr.x));
       const len1 = dist(prev, curr);
       const len2 = dist(curr, next);
-      if (len1 > 0.5 && len2 > 0.5 && cross / (len1 * len2) > 0.015) {
+      if (len1 > 0.5 && len2 > 0.5 && cross / (len1 * len2) > 0.01) {
         result.push(curr);
       }
     }
     return result.length >= 3 ? result : verts;
   }
 
-  // 新しく追加された区画（newChildFeat）を含めて、親（郡・政令市）および祖父（県）の外周境界を自動拡張
-  function expandAncestorBoundariesWithNewChild(newChildFeat) {
-    let currChild = newChildFeat;
-    let expandedNames = [];
+  // 新しく追加・変形された区画（childFeat）を含めて、親（郡・政令市）および祖父（県）の外周境界を自動拡張
+  function expandAncestorBoundariesWithNewChild(childFeat) {
+    let currChild = childFeat;
+    const expandedNames = [];
 
     while (currChild && currChild.parentId) {
       const parent = state.features.find(f => f.id === currChild.parentId);
       if (!parent) break;
 
       if (parent.vertices && parent.vertices.length >= 3 && currChild.vertices && currChild.vertices.length >= 3) {
-        const mergedOuter = computeUnionOuterBoundary([parent.vertices, currChild.vertices]);
-        if (mergedOuter && mergedOuter.length >= 3) {
-          parent.vertices = mergedOuter;
-          expandedNames.push(`${parent.name}${parent.suffix}`);
+        // 子区画の頂点が1つでも親ポリゴンの外側にあるか判定
+        const hasProtrudingVertex = currChild.vertices.some(v => !isPointOnBoundaryOrInside(v, parent.vertices, 1.5));
+
+        if (hasProtrudingVertex) {
+          const mergedOuter = computeUnionOuterBoundary([parent.vertices, currChild.vertices]);
+          if (mergedOuter && mergedOuter.length >= 3) {
+            parent.vertices = mergedOuter;
+            expandedNames.push(`${parent.name}${parent.suffix}`);
+          }
         }
       }
       currChild = parent;
@@ -1400,6 +1452,13 @@
 
   function handlePointerUp() {
     if (state.dragMode === 'vertex' || state.dragMode === 'feature') {
+      // 市区町村や郡の頂点を外側に広げた場合も、親の県・郡の外周境界が自動拡張される
+      if (state.topologySyncEnabled && state.selectedId) {
+        const movedFeat = state.features.find(f => f.id === state.selectedId);
+        if (movedFeat && movedFeat.parentId) {
+          expandAncestorBoundariesWithNewChild(movedFeat);
+        }
+      }
       saveHistory();
     }
     state.dragMode = null;
@@ -1741,7 +1800,6 @@
       propFillColor.value = selectedFeat.fillColor;
       propStrokeColor.value = selectedFeat.strokeColor;
 
-      // 選択中の階層に応じて「配下を追加」および「子区画に合わせて外周を再構築」ボタンを表示
       childCreatorBar.innerHTML = '';
       if (selectedFeat.adminLevel === 'prefecture') {
         childCreatorBar.innerHTML = `
