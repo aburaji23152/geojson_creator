@@ -1,4 +1,4 @@
-const CACHE_NAME = 'geojson-creator-v1.1.6';
+const CACHE_NAME = 'geojson-creator-v1.1.7';
 
 // アプリを構成するローカルファイル
 const APP_SHELL_ASSETS = [
